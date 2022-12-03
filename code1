@@ -1,0 +1,3496 @@
+-- Gun script
+
+local Ignore_Code = script:WaitForChild("Ignore_Code")
+
+repeat wait() until Ignore_Code.Value ~= 0
+
+local Ignore_Model = game.Workspace:WaitForChild("Ignore_Model_"..Ignore_Code.Value)
+
+local Gun = script.Parent
+local Handle = Gun:WaitForChild("Handle")
+local AimPart = Gun:WaitForChild("AimPart")
+local Main = Gun:WaitForChild("Main")
+
+local Ammo = Gun:WaitForChild("Ammo")
+local ClipSize = Gun:WaitForChild("ClipSize")
+local StoredAmmo = Gun:WaitForChild("StoredAmmo")
+
+local LethalGrenades = Gun:WaitForChild("LethalGrenades")
+local TacticalGrenades = Gun:WaitForChild("TacticalGrenades")
+
+local S = require(Gun:WaitForChild("SETTINGS"))
+
+local Player = game.Players.LocalPlayer
+local Character = Player.Character
+local Humanoid = Character:WaitForChild("Humanoid")
+local Torso = Character:WaitForChild("Torso")
+local Head = Character:WaitForChild("Head")
+local HRP = Character:WaitForChild("HumanoidRootPart")
+
+local Neck = Torso:WaitForChild("Neck")
+
+local LArm = Character:WaitForChild("Left Arm")
+local RArm = Character:WaitForChild("Right Arm")
+local LLeg = Character:WaitForChild("Left Leg")
+local RLeg = Character:WaitForChild("Right Leg")
+
+local M2 = Player:GetMouse()
+local Main_Gui = script:WaitForChild("Main_Gui")
+
+local RS = game:GetService("RunService").RenderStepped
+
+local Camera = game.Workspace.CurrentCamera
+
+local ABS, HUGE, FLOOR, CEIL = math.abs, math.huge, math.floor, math.ceil
+local RAD, SIN, ATAN, COS = math.rad, math.sin, math.atan2, math.cos
+local VEC3 = Vector3.new
+local CF, CFANG = CFrame.new, CFrame.Angles
+local INSERT = table.insert
+
+local MaxStamina = S.SprintTime * 60
+local MaxSteadyTime = S.ScopeSteadyTime * 60
+
+local LethalIcons = {
+	"http://www.roblox.com/asset/?id=194849880";
+	"http://www.roblox.com/asset/?id=195727791";
+	"http://www.roblox.com/asset/?id=195728137";
+}
+
+local TacticalIcons = {
+	"http://www.roblox.com/asset/?id=195728473";
+	"http://www.roblox.com/asset/?id=195728693";
+}
+
+local Ignore = {
+	Character;
+	Ignore_Model;
+}
+
+local StanceOffset = {
+	VEC3(0, 0, 0);
+	VEC3(0, -1, 0);
+	VEC3(0, -3, 0);
+}
+
+local Shoulders = {
+	Right = Torso:WaitForChild("Right Shoulder");
+	Left = Torso:WaitForChild("Left Shoulder")
+}
+
+local ArmC0 = {
+	CF(-1.5, 0, 0) * CFANG(RAD(90), 0, 0);
+	CF(1.5, 0, 0) * CFANG(RAD(90), 0, 0);
+}
+
+local Sine = function(X)
+	return SIN(RAD(X))
+end
+
+local Linear = function(X)
+	return (X / 90)
+end
+
+local Selected = false
+
+local Idleing = false
+local Walking = false
+local Running = false
+
+local Aimed = false
+local Aiming = false
+
+local Reloading = false
+local BreakReload = false
+
+local Knifing = false
+local ThrowingGrenade = false
+
+local MB1_Down = false
+
+local CanFire = true
+
+local KnifeReady = true
+
+local CanRun = true
+local RunTween = false
+local Run_Key_Pressed = false
+local ChargingStamina = false
+
+local AimingIn = false
+local AimingOut = false
+
+local Stamina = S.SprintTime * 60
+local CurrentSteadyTime = S.ScopeSteadyTime * 60
+
+local CameraSteady = false
+local TakingBreath = false
+
+local Grip = nil
+local Aimed_GripCF = nil
+
+local Gui_Clone = nil
+
+local CurrentSpread = S.Spread.Hipfire
+local CurrentRecoil = S.Recoil.Hipfire
+
+local AmmoInClip = 0
+
+local Stance = 0
+local StanceSway = 1
+local CameraSway = 1
+
+local HeadRot = 0
+local ArmTilt = 0
+
+local LastBeat = 0
+
+local Parts = {}
+
+local Connections = {}
+
+local PrevNeckCF = {
+	C0 = nil;
+	C1 = nil;
+}
+
+local Keys = {}
+
+local ContentProvider = game:GetService("ContentProvider")
+ContentProvider:Preload(S.ExplosionSound)
+ContentProvider:Preload(S.KnifeMeshId)
+ContentProvider:Preload(S.KnifeTextureId)
+ContentProvider:Preload(S.BulletHoleTexture)
+
+local AnimAng = {0, 0, 0, 0, 0}
+
+local AnimCF = function(State, Ang)
+	if State ~= "Running" then
+		if (not Aimed) then
+			if State == "Idleing" then
+				return CF(
+					RAD(SIN(Ang)) / 2 * StanceSway,
+					1 + RAD(SIN(Ang * 5 / 2)) / 2 * StanceSway, 0
+				)
+			elseif State == "Walking" then
+				return CF(
+					RAD(SIN(Ang)) * 2 * StanceSway,
+					1 + RAD(ABS(SIN(Ang))) * 2 * StanceSway, 0
+				) * CFANG(0, RAD(SIN(Ang)) / 3, 0)
+			end
+		elseif Aimed then
+			if State == "Idleing" then
+				return CF(
+					RAD(SIN(Ang)) / 4 * StanceSway,
+					1 + RAD(SIN(Ang * 5 / 2)) / 4 * StanceSway, 0
+				)
+			elseif State == "Walking" then
+				return CF(
+					RAD(SIN(Ang)) / 3 * StanceSway,
+					1 + RAD(ABS(SIN(Ang))) / 3 * StanceSway, 0
+				)
+			end
+		end
+	elseif State == "Running" then
+		return CF(
+			SIN(Ang) / 6 * StanceSway,
+			0.9 + ABS(SIN(Ang)) / 5 * StanceSway, 0
+		) * CFANG(0, -RAD(SIN(Ang)) * 7, 0)
+	end
+end
+
+function Animate()
+	local IsIdleing = false
+	local IsWalking = false
+	local IsRunning = false
+	spawn(function()
+		while Selected do
+			IsIdleing = Idleing and (not Walking) and (not Reloading) and (not Knifing) and (not ThrowingGrenade) and Selected
+			IsWalking = (not Idleing) and Walking and (not Running) and (not Reloading) and (not Knifing) and (not ThrowingGrenade) and Selected
+			IsRunning = (not Idleing) and Walking and Running and (not Aiming) and (not Knifing) and (not ThrowingGrenade) and Selected
+			RS:wait()
+		end
+		IsIdleing = false
+		IsWalking = false
+		IsRunning = false
+	end)
+	spawn(function()
+		if S.PlayerAnimations then
+			TweenJoint(LWeld2, CF(), CFANG(0, RAD(ArmTilt), 0), Sine, 0.15)
+			TweenJoint(RWeld2, CF(), CFANG(0, RAD(ArmTilt), 0), Sine, 0.15)
+			local PreviousArmTilt = ArmTilt
+			while Selected do
+				repeat RS:wait() until (ArmTilt ~= PreviousArmTilt) or (not Selected)
+				if (not IsRunning) and (not Aimed) and (not Reloading) and (not Knifing) and (not ThrowingGrenade) and Selected then
+					PreviousArmTilt = ArmTilt
+					TweenJoint(LWeld2, CF(), CFANG(0, RAD(ArmTilt), 0), Sine, 0.15)
+					TweenJoint(RWeld2, CF(), CFANG(0, RAD(ArmTilt), 0), Sine, 0.15)
+				end
+				RS:wait()
+			end
+		end
+	end)
+	spawn(function()
+		while Selected do
+			if IsIdleing then
+				if (not Aimed) and (not Aiming) then
+					Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+						UDim2.new(0, 70, 0, 70),
+						UDim2.new(0, -35, 0, -35),
+						Enum.EasingDirection.Out,
+						Enum.EasingStyle.Linear,
+						S.PlayerAnimations and 0.15 or 0,
+						true
+					)
+					if S.PlayerAnimations then
+						TweenJoint(LWeld, ArmC0[1], S.ArmC1_UnAimed.Left, Sine, 0.15)
+						TweenJoint(RWeld, ArmC0[2], S.ArmC1_UnAimed.Right, Sine, 0.15)
+						TweenJoint(AnimWeld, AnimCF("Idleing", AnimAng[1]), CF(), Sine, 0.15)
+						TweenJoint(Grip, Grip.C0, CFANG(0, RAD(20), 0), Sine, 0.15)
+					else
+						if (not LWeld:FindFirstChild("TweenCode"))
+						and (not RWeld:FindFirstChild("TweenCode"))
+						and (not ABWeld:FindFirstChild("TweenCode"))
+						and (not AnimWeld:FindFirstChild("TweenCode")) then
+							LWeld.C0, LWeld.C1 = ArmC0[1], S.ArmC1_UnAimed.Left
+							RWeld.C0, RWeld.C1 = ArmC0[2], S.ArmC1_UnAimed.Right
+							AnimWeld.C0 = CF(0, 1, 0)
+							Grip.C1 = CFANG(0, RAD(20), 0)
+						end
+					end
+				elseif Aimed and (not Aiming) then
+					if S.PlayerAnimations then
+						TweenJoint(LWeld, ArmC0[1], S.ArmC1_Aimed.Left, Sine, 0.15)
+						TweenJoint(RWeld, ArmC0[2], S.ArmC1_Aimed.Right, Sine, 0.15)
+						TweenJoint(AnimWeld, AnimCF("Idleing", AnimAng[2]), CF(), Sine, 0.15)
+					else
+						if (not LWeld:FindFirstChild("TweenCode"))
+						and (not RWeld:FindFirstChild("TweenCode"))
+						and (not ABWeld:FindFirstChild("TweenCode"))
+						and (not AnimWeld:FindFirstChild("TweenCode")) then
+							LWeld.C0, LWeld.C1 = ArmC0[1], S.ArmC1_Aimed.Left
+							RWeld.C0, RWeld.C1 = ArmC0[2], S.ArmC1_Aimed.Right
+							AnimWeld.C0 = CF(0, 1, 0)
+							Grip.C1 = Aimed_GripCF
+						end
+					end
+				end
+				if S.PlayerAnimations then
+					wait(0.15)
+					RunTween = false
+					while IsIdleing do
+						if (not LWeld:FindFirstChild("TweenCode"))
+						and (not RWeld:FindFirstChild("TweenCode"))
+						and (not ABWeld:FindFirstChild("TweenCode"))
+						and (not AnimWeld:FindFirstChild("TweenCode")) then
+							if (not Aimed) and (not Aiming) then
+								AnimWeld.C0 = AnimCF("Idleing", AnimAng[1])
+								AnimAng[1] = AnimAng[1] + 0.03 * StanceSway
+							elseif Aimed and (not Aiming) then
+								AnimWeld.C0 = AnimCF("Idleing", AnimAng[2])
+								AnimAng[2] = AnimAng[2] + 0.015 * StanceSway
+							end
+						end
+						RS:wait()
+					end
+					AnimAng[1], AnimAng[2] = 0, 0
+				end
+			end
+			if IsWalking then
+				if (not Aimed) and (not Aiming) then
+					Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+						UDim2.new(0, 150, 0, 150),
+						UDim2.new(0, -75, 0, -75),
+						Enum.EasingDirection.Out,
+						Enum.EasingStyle.Linear,
+						S.PlayerAnimations and 0.15 or 0,
+						true
+					)
+					if S.PlayerAnimations then
+						TweenJoint(LWeld, ArmC0[1], S.ArmC1_UnAimed.Left, Sine, 0.15)
+						TweenJoint(RWeld, ArmC0[2], S.ArmC1_UnAimed.Right, Sine, 0.15)
+						TweenJoint(AnimWeld, AnimCF("Walking", AnimAng[3]), CF(), Sine, 0.15)
+						TweenJoint(Grip, Grip.C0, CFANG(0, RAD(20), 0), Sine, 0.15)
+					else
+						if (not LWeld:FindFirstChild("TweenCode"))
+						and (not RWeld:FindFirstChild("TweenCode"))
+						and (not ABWeld:FindFirstChild("TweenCode"))
+						and (not AnimWeld:FindFirstChild("TweenCode")) then
+							LWeld.C0, LWeld.C1 = ArmC0[1], S.ArmC1_UnAimed.Left
+							RWeld.C0, RWeld.C1 = ArmC0[2], S.ArmC1_UnAimed.Right
+							AnimWeld.C0 = CF(0, 1, 0)
+							Grip.C1 = CFANG(0, RAD(20), 0)
+						end
+					end
+				elseif Aimed and (not Aiming) then
+					if S.PlayerAnimations then
+						TweenJoint(LWeld, ArmC0[1], S.ArmC1_Aimed.Left, Sine, 0.15)
+						TweenJoint(RWeld, ArmC0[2], S.ArmC1_Aimed.Right, Sine, 0.15)
+						TweenJoint(AnimWeld, AnimCF("Walking", AnimAng[4]), CF(), Sine, 0.15)
+					else
+						if (not LWeld:FindFirstChild("TweenCode"))
+						and (not RWeld:FindFirstChild("TweenCode"))
+						and (not ABWeld:FindFirstChild("TweenCode"))
+						and (not AnimWeld:FindFirstChild("TweenCode")) then
+							LWeld.C0, LWeld.C1 = ArmC0[1], S.ArmC1_Aimed.Left
+							RWeld.C0, RWeld.C1 = ArmC0[2], S.ArmC1_Aimed.Right
+							AnimWeld.C0 = CF(0, 1, 0)
+							Grip.C1 = Aimed_GripCF
+						end
+					end
+				end
+				if S.PlayerAnimations then
+					wait(0.15)
+					RunTween = false
+					while IsWalking do
+						if (not LWeld:FindFirstChild("TweenCode"))
+						and (not RWeld:FindFirstChild("TweenCode"))
+						and (not ABWeld:FindFirstChild("TweenCode"))
+						and (not AnimWeld:FindFirstChild("TweenCode"))then
+							if (not Aimed) and (not Aiming) then
+								AnimWeld.C0 = AnimCF("Walking", AnimAng[3])
+								AnimAng[3] = AnimAng[3] + 0.15 * StanceSway
+							elseif Aimed and (not Aiming) then
+								AnimWeld.C0 = AnimCF("Walking", AnimAng[4])
+								AnimAng[4] = AnimAng[4] + 0.1 * StanceSway
+							end
+						end
+						RS:wait()
+					end
+					AnimAng[3], AnimAng[4] = 0, 0
+				end
+			end
+			if IsRunning then
+				Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+					UDim2.new(0, 200, 0, 200),
+					UDim2.new(0, -100, 0, -100),
+					Enum.EasingDirection.Out,
+					Enum.EasingStyle.Linear,
+					S.PlayerAnimations and 0.15 or 0,
+					true
+				)
+				local LArmCF = CF(0, 0.7 - (SIN(AnimAng[5]) + 1)/15, 0)
+				local LArmAng = CFANG(RAD(ABS(COS(AnimAng[5]))) * 10 + RAD(35), RAD(-30), RAD((SIN(AnimAng[5]) + 1) * 15 - 40))
+				local RArmCF = CF(0, (SIN(AnimAng[5]) + 1)/2, 0)
+				local RArmAng = CFANG(RAD(ABS(COS(AnimAng[5]))) * 10 + RAD(20), 0, RAD(50 + (SIN(AnimAng[5]) + 1) * 5))
+				if S.PlayerAnimations then
+					TweenJoint(LWeld, ArmC0[1], LArmCF * LArmAng, Sine, 0.15)
+					TweenJoint(RWeld, ArmC0[2], RArmCF * RArmAng, Sine, 0.15)
+					TweenJoint(AnimWeld, AnimCF("Running", AnimAng[5]), CF(), Sine, 0.15)
+					TweenJoint(Grip, Grip.C0, CFANG(0, RAD(-5), 0), Sine, 0.15)
+				else
+					LWeld.C0, LWeld.C1 = ArmC0[1], LArmCF * LArmAng
+					RWeld.C0, RWeld.C1 = ArmC0[2], RArmCF * RArmAng
+					AnimWeld.C0 = CF(0, 0.9, 0)
+					Grip.C1 = CFANG(0, RAD(-5), 0)
+				end
+				if S.PlayerAnimations then
+					RunTween = true
+					wait(0.15)
+					while IsRunning do
+						if (not Aiming) then
+							AnimWeld.C0 = AnimCF("Running", AnimAng[5])
+							AnimAng[5] = AnimAng[5] + 0.18
+						end
+						RS:wait()
+					end
+					AnimAng[5] = 0
+				end
+			end
+			RS:wait()
+		end
+	end)
+end
+
+Gun.Name = S.GunName
+Gun.ToolTip = S.Description
+		
+RS:connect(function()
+	local Forward = (Keys["w"] or Keys[string.char(17)])
+	local Backward = (Keys["s"] or Keys[string.char(18)])
+	local Right = (Keys["d"] or Keys[string.char(19)])
+	local Left = (Keys["a"] or Keys[string.char(20)])
+	
+	if (Forward or Backward or Right or Left) then
+		Walking, Idleing = true, false
+	elseif (not (Forward and Backward and Right and Left)) then
+		Walking, Idleing = false, true
+	end
+end)
+
+M2.KeyDown:connect(function(Key) Keys[Key] = true end)
+M2.KeyUp:connect(function(Key) Keys[Key] = false end)
+
+spawn(function()
+	for _, v in pairs(Gun:GetChildren()) do
+		if v:IsA("BasePart") and v ~= Handle then
+			if v:FindFirstChild("MainWeld") then v.MainWeld:Destroy() end
+			if (not v:FindFirstChild("WeldCF")) then
+				local WeldCF = Instance.new("CFrameValue")
+				WeldCF.Name = "WeldCF"
+				WeldCF.Value = Handle.CFrame:toObjectSpace(v.CFrame)
+				WeldCF.Parent = v
+			end
+			INSERT(Parts, {Obj = v, Weld = nil})
+			v.Anchored = false
+		end
+	end
+	Handle.Anchored = false
+end)
+
+function CreateArms()
+	local Arms = {}
+	for i = 0, 1 do
+		local ArmModel = Instance.new("Model")
+		ArmModel.Name = "ArmModel"
+		
+		local Arm = Instance.new("Part")
+		Arm.BrickColor = (S.FakeArmRealBodyColor and (i == 0 and LArm.BrickColor or RArm.BrickColor) or S.FakeArmColor)
+		Arm.Transparency = S.FakeArmTransparency
+		Arm.Name = "Arm"
+		Arm.CanCollide = false
+		Arm.Size = VEC3(1, 2, 1)
+		Arm.Parent = ArmModel
+		local ArmMesh = Instance.new("SpecialMesh")
+		ArmMesh.MeshId = "rbxasset://fonts//rightarm.mesh"
+		ArmMesh.MeshType = Enum.MeshType.FileMesh
+		ArmMesh.Scale = VEC3(0.65, 1, 0.65)
+		ArmMesh.Parent = Arm
+		
+		local Sleeve1 = Instance.new("Part")
+		Sleeve1.BrickColor = BrickColor.new("Sand green")
+		Sleeve1.Name = "Sleeve1"
+		Sleeve1.CanCollide = false
+		Sleeve1.Size = VEC3(1, 2, 1)
+		Sleeve1.Parent = ArmModel
+		local Sleeve1Mesh = Instance.new("BlockMesh")
+		Sleeve1Mesh.Offset = VEC3(0, 0.66, 0)
+		Sleeve1Mesh.Scale = VEC3(0.656, 0.35, 0.656)
+		Sleeve1Mesh.Parent = Sleeve1
+		local Sleeve1Weld = Instance.new("Weld")
+		Sleeve1Weld.Part0 = Arm
+		Sleeve1Weld.Part1 = Sleeve1
+		Sleeve1Weld.Parent = Arm
+		
+		local Sleeve2 = Instance.new("Part")
+		Sleeve2.BrickColor = BrickColor.new("Sand green")
+		Sleeve2.Name = "Sleeve2"
+		Sleeve2.CanCollide = false
+		Sleeve2.Size = VEC3(1, 2, 1)
+		Sleeve2.Parent = ArmModel
+		local Sleeve2Mesh = Instance.new("BlockMesh")
+		Sleeve2Mesh.Offset = VEC3(0, 0.46, 0)
+		Sleeve2Mesh.Scale = VEC3(0.75, 0.1, 0.75)
+		Sleeve2Mesh.Parent = Sleeve2
+		local Sleeve2Weld = Instance.new("Weld")
+		Sleeve2Weld.Part0 = Arm
+		Sleeve2Weld.Part1 = Sleeve2
+		Sleeve2Weld.Parent = Arm
+		
+		local Glove1 = Instance.new("Part")
+		Glove1.BrickColor = BrickColor.new("Black")
+		Glove1.Name = "Glove1"
+		Glove1.CanCollide = false
+		Glove1.Size = VEC3(1, 2, 1)
+		Glove1.Parent = ArmModel
+		local Glove1Mesh = Instance.new("BlockMesh")
+		Glove1Mesh.Offset = VEC3(0, -0.4, 0)
+		Glove1Mesh.Scale = VEC3(0.657, 0.205, 0.657)
+		Glove1Mesh.Parent = Glove1
+		local Glove1Weld = Instance.new("Weld")
+		Glove1Weld.Part0 = Arm
+		Glove1Weld.Part1 = Glove1
+		Glove1Weld.Parent = Arm
+		
+		local Glove2 = Instance.new("Part")
+		Glove2.BrickColor = BrickColor.new("Black")
+		Glove2.Name = "Glove2"
+		Glove2.CanCollide = false
+		Glove2.Size = VEC3(1, 2, 1)
+		Glove2.Parent = ArmModel
+		local Glove2Mesh = Instance.new("BlockMesh")
+		Glove2Mesh.Offset = VEC3(0, -0.335, 0)
+		Glove2Mesh.Scale = VEC3(0.69, 0.105, 0.69)
+		Glove2Mesh.Parent = Glove2
+		local Glove2Weld = Instance.new("Weld")
+		Glove2Weld.Part0 = Arm
+		Glove2Weld.Part1 = Glove2
+		Glove2Weld.Parent = Arm
+		
+		local Glove3 = Instance.new("Part")
+		Glove3.BrickColor = BrickColor.new("Black")
+		Glove3.Name = "Glove3"
+		Glove3.CanCollide = false
+		Glove3.Size = VEC3(1, 2, 1)
+		Glove3.Parent = ArmModel
+		local Glove3Mesh = Instance.new("BlockMesh")
+		Glove3Mesh.Offset = VEC3(0.2 * ((i * 2) - 1), -0.8, 0)
+		Glove3Mesh.Scale = VEC3(0.257, 0.205, 0.657)
+		Glove3Mesh.Parent = Glove3
+		local Glove3Weld = Instance.new("Weld")
+		Glove3Weld.Part0 = Arm
+		Glove3Weld.Part1 = Glove3
+		Glove3Weld.Parent = Arm
+		
+		table.insert(Arms, {Model = ArmModel, ArmPart = Arm})
+	end
+	return Arms
+end
+
+function NumLerp(A, B, Alpha)
+	return (A + ((B - A) * Alpha))
+end
+
+function RAND(Min, Max, Accuracy)
+	local Inverse = 1 / (Accuracy or 1)
+	return (math.random(Min * Inverse, Max * Inverse) / Inverse)
+end
+
+function TweenJoint(Joint, NewC0, NewC1, Alpha, Duration)
+	coroutine.resume(coroutine.create(function()
+		local TweenIndicator = nil --At the current moment, this is how the script determines whether the function is already tweening a joint
+		local NewCode = math.random(-1e9, 1e9) --This creates a random code between -1000000000 and 1000000000
+		if (not Joint:FindFirstChild("TweenCode")) then --If the joint isn't being tweened, then
+			TweenIndicator = Instance.new("IntValue")
+			TweenIndicator.Name = "TweenCode"
+			TweenIndicator.Value = NewCode
+			TweenIndicator.Parent = Joint
+		else
+			TweenIndicator = Joint.TweenCode
+			TweenIndicator.Value = NewCode --If the joint is already being tweened, this will change the code, and the tween loop will stop
+		end
+		local MatrixCFrame = function(CFPos, CFTop, CFBack)
+			local CFRight = CFTop:Cross(CFBack)
+			return CF(
+				CFPos.x, CFPos.y, CFPos.z,
+				CFRight.x, CFTop.x, CFBack.x,
+				CFRight.y, CFTop.y, CFBack.y,
+				CFRight.z, CFTop.z, CFBack.z
+			)
+		end
+		local LerpCF = function(StartCF, EndCF, Alpha)
+			local StartTop = (StartCF * CFANG(RAD(90), 0, 0)).lookVector
+			local StartBack = -StartCF.lookVector
+			local EndTop = (EndCF * CFANG(RAD(90), 0, 0)).lookVector
+			local EndBack = -EndCF.lookVector
+			local StartPos = StartCF.p
+			local EndPos = EndCF.p
+			local NewCF = MatrixCFrame(
+				StartPos:lerp(EndPos, Alpha),
+				StartTop:lerp(EndTop, Alpha),
+				StartBack:lerp(EndBack, Alpha)
+			)
+			return NewCF
+		end
+		local StartC0 = Joint.C0
+		local StartC1 = Joint.C1
+		local X = 0
+		while true do
+			local NewX = X + math.min(1.5 / math.max(Duration, 0), 90)
+			X = (NewX > 90 and 90 or NewX)
+			if TweenIndicator.Value ~= NewCode then break end --This makes sure that another tween wasn't called on the same joint
+			if (not Selected) then break end --This stops the tween if the tool is deselected
+			if NewC0 then Joint.C0 = LerpCF(StartC0, NewC0, Alpha(X)) end
+			if NewC1 then Joint.C1 = LerpCF(StartC1, NewC1, Alpha(X)) end
+			if X == 90 then break end
+			RS:wait() --This makes the for loop step every 1/60th of a second
+		end
+		if TweenIndicator.Value == NewCode then --If this tween functions was the last one called on a joint then it will remove the code
+			TweenIndicator:Destroy()
+		end
+	end))
+end
+
+function RotCamera(RotX, RotY, SmoothRot, Duration)
+	spawn(function()
+		if SmoothRot then
+			local TweenIndicator = nil
+			local NewCode = math.random(-1e9, 1e9)
+			if (not Camera:FindFirstChild("TweenCode")) then
+				TweenIndicator = Instance.new("IntValue")
+				TweenIndicator.Name = "TweenCode"
+				TweenIndicator.Value = NewCode
+				TweenIndicator.Parent = Camera
+			else
+				TweenIndicator = Camera.TweenCode
+				TweenIndicator.Value = NewCode
+			end
+			
+			local Step = math.min(1.5 / math.max(Duration, 0), 90)
+			local X = 0
+			while true do
+				local NewX = X + Step
+				X = (NewX > 90 and 90 or NewX)
+				if TweenIndicator.Value ~= NewCode then break end
+				if (not Selected) then break end
+				
+				local CamRot = Camera.CoordinateFrame - Camera.CoordinateFrame.p
+				local CamDist = (Camera.CoordinateFrame.p - Camera.Focus.p).magnitude
+				local NewCamCF = CF(Camera.Focus.p) * CamRot * CFANG(RotX / (90 / Step), RotY / (90 / Step), 0)
+				Camera.CoordinateFrame = CF(NewCamCF.p, NewCamCF.p + NewCamCF.lookVector) * CF(0, 0, CamDist)
+				
+				if X == 90 then break end
+				RS:wait()
+			end
+			
+			if TweenIndicator.Value == NewCode then
+				TweenIndicator:Destroy()
+			end
+		else
+			local CamRot = Camera.CoordinateFrame - Camera.CoordinateFrame.p
+			local CamDist = (Camera.CoordinateFrame.p - Camera.Focus.p).magnitude
+			local NewCamCF = CF(Camera.Focus.p) * CamRot * CFANG(RotX, RotY, 0)
+			Camera.CoordinateFrame = CF(NewCamCF.p, NewCamCF.p + NewCamCF.lookVector) * CF(0, 0, CamDist)
+		end
+	end)
+end
+
+function ConvertKey(Key)
+	if Key == string.char(8) then
+		return "BKSPCE" 
+	elseif Key == string.char(9) then
+		return "TAB"
+	elseif Key == string.char(13) then
+		return "ENTER"
+	elseif Key == string.char(17) then
+		return "UP"
+	elseif Key == string.char(18) then
+		return "DOWN"
+	elseif Key == string.char(19) then
+		return "RIGHT"
+	elseif Key == string.char(20) then
+		return "LEFT"
+	elseif Key == string.char(22) then
+		return "HOME"
+	elseif Key == string.char(23) then
+		return "END"
+	elseif Key == string.char(27) then
+		return "F2"
+	elseif Key == string.char(29) then
+		return "F4"
+	elseif Key == string.char(30) then
+		return "F5"
+	elseif Key == string.char(32) or Key == " " then
+		return "F7"
+	elseif Key == string.char(33) or Key == "!" then
+		return "F8"
+	elseif Key == string.char(34) or Key == '"' then
+		return "F9"
+	elseif Key == string.char(35) or Key == "#" then
+		return "F10"
+	elseif Key == string.char(37) or Key == "%" then
+		return "F12"
+	elseif Key == string.char(47) or Key == "/" then
+		return "R-SHIFT"
+	elseif Key == string.char(48) or Key == "0" then
+		return "L-SHIFT"
+	elseif Key == string.char(49) or Key == "1" then
+		return "R-CTRL"
+	elseif Key == string.char(50) or Key == "2" then
+		return "L-CTRL"
+	elseif Key == string.char(51) or Key == "3" then
+		return "R-ALT"
+	elseif Key == string.char(52) or Key == "4" then
+		return "L-ALT"
+	else
+		return string.upper(Key)
+	end
+end
+
+function CreateControlFrame(Key, Desc, Num)
+	local Controls = Gui_Clone:WaitForChild("HUD"):WaitForChild("Controls")
+	
+	local C = Instance.new("Frame")
+	C.BackgroundTransparency = ((Num % 2) == 1 and 0.7 or 1)
+	C.BorderSizePixel = 0
+	C.Name = "C"..Num
+	C.Position = UDim2.new(0, 0, 0, Num * 20)
+	C.Size = UDim2.new(1, 0, 0, 20)
+	
+	local K = Instance.new("TextLabel")
+	K.BackgroundTransparency = 1
+	K.Name = "Key"
+	K.Size = UDim2.new(0, 45, 1, 0)
+	K.Font = Enum.Font.ArialBold
+	K.FontSize = Enum.FontSize.Size14
+	K.Text = Key
+	K.TextColor3 = Color3.new(1, 1, 1)
+	K.TextScaled = (string.len(Key) > 5)
+	K.TextWrapped = (string.len(Key) > 5)
+	K.Parent = C
+	
+	local D = Instance.new("TextLabel")
+	D.BackgroundTransparency = 1
+	D.Name = "Desc"
+	D.Position = UDim2.new(0, 50, 0, 0)
+	D.Size = UDim2.new(1, -50, 1, 0)
+	D.Font = Enum.Font.ArialBold
+	D.FontSize = Enum.FontSize.Size14
+	D.Text = "- "..Desc
+	D.TextColor3 = Color3.new(1, 1, 1)
+	D.TextXAlignment = Enum.TextXAlignment.Left
+	D.Parent = C
+	
+	C.Parent = Controls
+end
+
+function SetUpGui()
+	local HUD = Gui_Clone:WaitForChild("HUD")
+	local Scope = Gui_Clone:WaitForChild("Scope")
+	local Grenades = HUD:WaitForChild("Grenades")
+	local Controls = HUD:WaitForChild("Controls")
+	local CurrentNum = 1
+	
+	if S.CanChangeStance then
+		local Dive = (S.DolphinDive and " / Dive" or "")
+		CreateControlFrame(ConvertKey(S.LowerStanceKey), "Lower Stance"..Dive, CurrentNum)
+		CurrentNum = CurrentNum + 1
+		
+		CreateControlFrame(ConvertKey(S.RaiseStanceKey), "Raise Stance", CurrentNum)
+		CurrentNum = CurrentNum + 1
+	end
+	
+	CreateControlFrame(ConvertKey(S.ReloadKey), "Reload", CurrentNum)
+	CurrentNum = CurrentNum + 1
+	
+	if S.CanKnife then
+		CreateControlFrame(ConvertKey(S.KnifeKey), "Knife", CurrentNum)
+		CurrentNum = CurrentNum + 1
+	end
+	
+	if S.Throwables then
+		CreateControlFrame(ConvertKey(S.LethalGrenadeKey), "Throw Lethal", CurrentNum)
+		CurrentNum = CurrentNum + 1
+		
+		CreateControlFrame(ConvertKey(S.TacticalGrenadeKey), "Throw Tactical", CurrentNum)
+		CurrentNum = CurrentNum + 1
+	else
+		Grenades.Visible = false
+		HUD.Position = UDim2.new(1, -200, 1, -100)
+		HUD.Size = UDim2.new(0, 175, 0, 50)
+	end
+	
+	CreateControlFrame(ConvertKey(S.SprintKey), "Sprint", CurrentNum)
+	CurrentNum = CurrentNum + 1
+	
+	if S.ADSKey ~= "" then
+		local Hold = (S.HoldMouseOrKeyToADS and "HOLD " or "")
+		CreateControlFrame(Hold..ConvertKey(S.ADSKey).." OR R-MOUSE", "Aim Down Sights", CurrentNum)
+		CurrentNum = CurrentNum + 1
+	end
+	
+	Controls.Size = UDim2.new(1, 0, 0, CurrentNum * 20)
+	Controls.Position = UDim2.new(0, 0, 0, -(CurrentNum * 20) - 80)
+	
+	if S.GuiScope then
+		Scope:WaitForChild("Img").Image = S.GuiId
+		Scope:WaitForChild("Steady").Text = "Hold "..ConvertKey(S.ScopeSteadyKey).." to Steady"
+	end
+	
+	if HUD:FindFirstChild("Co") then
+		HUD.Co:Destroy()
+	end
+	local Co = Instance.new("TextLabel")
+	Co.BackgroundTransparency = 1
+	Co.Name = "Co"
+	Co.Position = UDim2.new(0, 0, 1, 5)
+	Co.Size = UDim2.new(1, 0, 0, 20)
+	Co.Font = Enum.Font.ArialBold
+	Co.FontSize = Enum.FontSize.Size14
+	Co.Text = ("noisuFobruT yb detpircs tiK nuG"):reverse()
+	Co.TextColor3 = Color3.new(1, 1, 0)
+	Co.TextStrokeTransparency = 0
+	Co.TextXAlignment = Enum.TextXAlignment.Right
+	Co.Parent = HUD
+	
+	HUD:WaitForChild("Grenades"):WaitForChild("Lethals"):WaitForChild("Icon").Image = LethalIcons[S.LethalGrenadeType]
+	HUD:WaitForChild("Grenades"):WaitForChild("Tacticals"):WaitForChild("Icon").Image = TacticalIcons[S.TacticalGrenadeType]
+end
+
+function Fire_Gun()
+	local FireSound = Handle:FindFirstChild("FireSound")
+	local FlashGui = Main:FindFirstChild("FlashGui")
+	local FlashFX = Main:FindFirstChild("FlashFX")
+				
+	if FireSound then FireSound:Play() end
+	
+	local MockSpread = (
+		((not Aimed) and CurrentSpread <= S.Spread.Max and Idleing)
+		and CurrentSpread * S.Spread.Multiplier or CurrentSpread
+	)
+	CurrentSpread = (MockSpread >= S.Spread.Max and S.Spread.Max or MockSpread)
+	
+	----------------------------------------------------------------------------------
+	for _ = 1, (S.GunType.Shot and S.ShotAmount or 1) do
+		local BSpread = CFANG(
+			RAD(RAND(-CurrentSpread, CurrentSpread) / 20),
+			RAD(RAND(-CurrentSpread, CurrentSpread) / 20),
+			RAD(RAND(-CurrentSpread, CurrentSpread) / 20)
+		)
+		local OriginCF = (Aimed and (S.GuiScope and Head.CFrame or Handle.CFrame) or Head.CFrame)
+		local OriginPos = Main.CFrame.p
+		local Direction = (CF(OriginCF.p, OriginCF.p + OriginCF.lookVector) * BSpread).lookVector
+		
+		if S.InstantHit then
+			local HitObj, HitPos = AdvRayCast(Main.CFrame.p, Direction, S.BulletRange)
+			local HitHumanoid = nil
+			if HitObj then
+				if S.GunType.Explosive then
+					if S.ExplosionSound ~= "" then
+						local SoundPart = Instance.new("Part")
+						SoundPart.Transparency = 1
+						SoundPart.Anchored = true
+						SoundPart.CanCollide = false
+						SoundPart.CFrame = CFrame.new(HitPos)
+						SoundPart.Parent = game.Workspace
+						
+						local Sound = Instance.new("Sound")
+						Sound.Pitch = S.ExplosionSoundPitch
+						Sound.SoundId = S.ExplosionSound
+						Sound.Volume = S.ExplosionSoundVolume
+						Sound.Parent = SoundPart
+						Sound:Play()
+						
+						delay(1 / 20, function()
+							SoundPart:Destroy()
+						end)
+					end
+					CreateBulletHole(HitPos, HitObj)
+					CreateShockwave(HitPos, S.ExplosionRadius)
+					local E = Instance.new("Explosion")
+					E.BlastPressure = S.ExplosionPressure
+					E.BlastRadius = S.ExplosionRadius
+					E.DestroyJointRadiusPercent = (S.RangeBasedDamage and 0 or 1)
+					E.ExplosionType = S.ExplosionType
+					E.Position = HitPos
+					E.Hit:connect(function(HObj, HDist)
+						if HObj.Name == "Torso" and (not HObj:IsDescendantOf(Character)) then
+							if S.RangeBasedDamage then
+								local Dir = (HObj.Position - HitPos).unit
+								local H, P = AdvRayCast(HitPos - Dir, Dir, 999)
+								local RayHitHuman = H:IsDescendantOf(HObj.Parent)
+								if (S.RayCastExplosions and RayHitHuman) or (not S.RayCastExplosions) then
+									local HitHumanoid = FindFirstClass(HObj.Parent, "Humanoid")
+									if HitHumanoid and HitHumanoid.Health > 0 and IsEnemy(HitHumanoid) then
+										local DistFactor = HDist / S.ExplosionRadius
+										local DistInvert = math.max(1 - DistFactor,0)
+										local NewDamage = DistInvert * S.Damage
+										
+										local CreatorTag = Instance.new("ObjectValue")
+										CreatorTag.Value = Player
+										CreatorTag.Name = "creator"
+										CreatorTag.Parent = HitHumanoid
+										HitHumanoid:TakeDamage(NewDamage)
+										MarkHit()
+									end
+								end
+							else
+								local HitHumanoid = FindFirstClass(HObj.Parent, "Humanoid")
+								if HitHumanoid and HitHumanoid.Health > 0 and IsEnemy(HitHumanoid) then
+									local CreatorTag = Instance.new("ObjectValue")
+									CreatorTag.Value = Player
+									CreatorTag.Name = "creator"
+									CreatorTag.Parent = HitHumanoid
+									MarkHit()
+								end
+							end
+						end
+					end)
+					E.Parent = game.Workspace
+				else
+					HitHumanoid = Damage(HitObj, HitPos)
+				end
+			end
+			local FinalHitPos = HitPos
+			if S.Penetration > 0 and (not S.GunType.Explosive) then
+				FinalHitPos = PenetrateWall(HitPos, Direction, HitHumanoid, OriginPos)
+			end
+			if S.BulletTrail and S.TrailTransparency ~= 1 then
+				local Trail = Instance.new("Part")
+				Trail.BrickColor = S.TrailColor
+				Trail.Transparency = S.TrailTransparency
+				Trail.Anchored = true
+				Trail.CanCollide = false
+				Trail.Size = VEC3(1, 1, 1)
+				local Mesh = Instance.new("BlockMesh")
+				Mesh.Offset = VEC3(0, 0, -(FinalHitPos - OriginPos).magnitude / 2)
+				Mesh.Scale = VEC3(S.TrailThickness, S.TrailThickness, (FinalHitPos - OriginPos).magnitude)
+				Mesh.Parent = Trail
+				Trail.Parent = Gun_Ignore
+				Trail.CFrame = CF(OriginPos, FinalHitPos)
+				delay(S.TrailVisibleTime, function()
+					if S.TrailDisappearTime > 0 then
+						local X = 0
+						while true do
+							if X == 90 then break end
+							if (not Selected) then break end
+							local NewX = X + (1.5 / S.TrailDisappearTime)
+							X = (NewX > 90 and 90 or NewX)
+							local Alpha = X / 90
+							Trail.Transparency = NumLerp(S.TrailTransparency, 1, Alpha)
+							RS:wait()
+						end
+						Trail:Destroy()
+					else
+						Trail:Destroy()
+					end
+				end)
+			end
+		else
+			local Bullet = CreateBullet(Direction)
+			local LastPos = Main.CFrame.p
+			local TotalDistTraveled = 0
+			local HitHumanoid = nil
+			spawn(function()
+				while true do
+					RS:wait()
+					if TotalDistTraveled >= S.BulletRange then
+						Bullet:Destroy()
+						break
+					end
+					local DistTraveled = (Bullet.Position - LastPos).magnitude
+					local HitObj, HitPos = AdvRayCast(LastPos, (Bullet.Position - LastPos).unit, DistTraveled)
+					if HitObj then
+						if S.GunType.Explosive then
+							if S.ExplosionSound ~= "" then
+								local Sound = Instance.new("Sound")
+								Sound.Pitch = S.ExplosionSoundPitch
+								Sound.SoundId = S.ExplosionSound
+								Sound.Volume = S.ExplosionSoundVolume
+								Sound.Parent = Bullet
+								Sound:Play()
+							end
+							CreateBulletHole(HitPos, HitObj)
+							CreateShockwave(HitPos, S.ExplosionRadius)
+							local E = Instance.new("Explosion")
+							E.BlastPressure = S.ExplosionPressure
+							E.BlastRadius = S.ExplosionRadius
+							E.DestroyJointRadiusPercent = (S.RangeBasedDamage and 0 or 1)
+							E.ExplosionType = S.ExplosionType
+							E.Position = HitPos
+							E.Hit:connect(function(HObj, HDist)
+								if HObj.Name == "Torso" and (not HObj:IsDescendantOf(Character)) then
+									if S.RangeBasedDamage then
+										local Dir = (HObj.Position - HitPos).unit
+										local H, P = AdvRayCast(HitPos - Dir, Dir, 999)
+										local RayHitHuman = H:IsDescendantOf(HObj.Parent)
+										if (S.RayCastExplosions and RayHitHuman) or (not S.RayCastExplosions) then
+											local HitHumanoid = FindFirstClass(HObj.Parent, "Humanoid")
+											if HitHumanoid and HitHumanoid.Health > 0 and IsEnemy(HitHumanoid) then
+												local DistFactor = HDist / S.ExplosionRadius
+												local DistInvert = math.max(1 - DistFactor,0)
+												local NewDamage = DistInvert * S.Damage
+												
+												local CreatorTag = Instance.new("ObjectValue")
+												CreatorTag.Value = Player
+												CreatorTag.Name = "creator"
+												CreatorTag.Parent = HitHumanoid
+												HitHumanoid:TakeDamage(NewDamage)
+												MarkHit()
+											end
+										end
+									else
+										local HitHumanoid = FindFirstClass(HObj.Parent, "Humanoid")
+										if HitHumanoid and HitHumanoid.Health > 0 and IsEnemy(HitHumanoid) then
+											local CreatorTag = Instance.new("ObjectValue")
+											CreatorTag.Value = Player
+											CreatorTag.Name = "creator"
+											CreatorTag.Parent = HitHumanoid
+											MarkHit()
+										end
+									end
+								end
+							end)
+							E.Parent = game.Workspace
+						else
+							HitHumanoid = Damage(HitObj, HitPos)
+						end
+						if S.Penetration > 0 and (not S.GunType.Explosive) then
+							PenetrateWall(HitPos, (Bullet.Position - LastPos).unit, HitHumanoid, OriginPos, Bullet)
+						else
+							Bullet:Destroy()
+						end
+						break
+					else
+						LastPos = Bullet.Position
+						TotalDistTraveled = TotalDistTraveled + DistTraveled
+					end
+				end
+			end)
+			
+			if S.BulletTrail and S.TrailTransparency ~= 1 then
+				spawn(function()
+					local LastPos2 = nil
+					while true do
+						if LastPos2 then
+							if (not Bullet:IsDescendantOf(game)) then break end
+							Bullet.CFrame = CFrame.new(Bullet.CFrame.p, Bullet.CFrame.p + Bullet.Velocity)
+							local Trail = Instance.new("Part")
+							Trail.BrickColor = S.TrailColor
+							Trail.Transparency = S.TrailTransparency
+							Trail.Anchored = true
+							Trail.CanCollide = false
+							Trail.Size = VEC3(1, 1, 1)
+							local Mesh = Instance.new("BlockMesh")
+							Mesh.Offset = VEC3(0, 0, -(Bullet.Position - LastPos2).magnitude / 2)
+							Mesh.Scale = VEC3(S.TrailThickness, S.TrailThickness, (Bullet.Position - LastPos2).magnitude)
+							Mesh.Parent = Trail
+							Trail.Parent = Gun_Ignore
+							Trail.CFrame = CF(LastPos2, Bullet.Position)
+							delay(S.TrailVisibleTime, function()
+								if S.TrailDisappearTime > 0 then
+									local X = 0
+									while true do
+										if X == 90 then break end
+										if (not Selected) then break end
+										local NewX = X + (1.5 / S.TrailDisappearTime)
+										X = (NewX > 90 and 90 or NewX)
+										local Alpha = X / 90
+										Trail.Transparency = NumLerp(S.TrailTransparency, 1, Alpha)
+										RS:wait()
+									end
+									Trail:Destroy()
+								else
+									Trail:Destroy()
+								end
+							end)
+							LastPos2 = Bullet.Position
+						else
+							LastPos2 = Main.CFrame.p
+						end
+						RS:wait()
+					end
+				end)
+			end
+		end
+	end
+	
+	local RecoilX = RAD(CurrentRecoil * RAND(1, 1.5, 0.1)) * StanceSway
+	local RecoilY = RAD(CurrentRecoil * RAND(-2, 2, 0.1)) * StanceSway
+	RotCamera(RecoilX, RecoilY, true, 0.06)
+	delay(0.05, function()
+		RotCamera(-RecoilX / 5, -RecoilY / 5, true, 0.1)
+	end)
+	if Idleing and (not Walking) and (not Aimed) then
+		local SpreadScale = (CurrentSpread / S.Spread.Max) * 50
+		Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+			UDim2.new(0, 70 + 2 * SpreadScale, 0, 70 + 2 * SpreadScale),
+			UDim2.new(0, -35 - SpreadScale, 0, -35 - SpreadScale),
+			"Out", "Linear", 0.1, true
+		)
+	end
+	
+	local KickSide = (
+		(
+			{
+				CurrentRecoil * (RAND(1, 5, 1) / 150);
+				CurrentRecoil * (RAND(1, 5, 1) / -150)
+			}
+		)[math.random(1, 2)]
+	) * StanceSway
+	local KickBack = CurrentRecoil * StanceSway * 0.3
+	local KickUp = RAD(90 + (CurrentRecoil * RAND(1.3, 1.4, 0.01) * StanceSway))
+	TweenJoint(AnimWeld, CF(KickSide, 1, -KickBack), CFANG(KickUp - RAD(90), 0, 0), Linear, 1 / 12)
+	
+	if FlashFX then FlashFX.Enabled = true end
+	if FlashGui then
+		FlashGui.Enabled = true
+		FlashGui.Label.Rotation = RAND(0, 360)
+	end
+	
+	delay(1 / 30, function()
+		if Idleing and (not Walking) and (not Aimed) then
+			Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+				UDim2.new(0, 70, 0, 70),
+				UDim2.new(0, -35, 0, -35),
+				"Out", "Linear", S.AimSpeed, (not Aimed)
+			)
+		end
+		if (not Aiming) and (not RunTween) then
+			TweenJoint(AnimWeld, CF(0, 1, 0), CF(), Linear, 0.15)
+		end
+		if FlashFX then FlashFX.Enabled = false end
+		if FlashGui then FlashGui.Enabled = false end
+	end)
+end
+
+function MarkHit()
+	spawn(function()
+		if Gui_Clone:IsDescendantOf(game) then
+			Gui_Clone.HitMarker.Visible = true
+			local StartMark = tick()
+			LastMark = StartMark
+			wait(0.5)
+			if LastMark <= StartMark then
+				Gui_Clone.HitMarker.Visible = false
+			end
+		end
+	end)
+end
+
+function AimGun()
+	if (Camera.CoordinateFrame.p - Camera.Focus.p).magnitude > 1 or Reloading or Knifing or ThrowingGrenade then return end
+	local Scope = Gui_Clone:WaitForChild("Scope"):WaitForChild("Img")
+	local Steady = Gui_Clone:WaitForChild("Scope"):WaitForChild("Steady")
+	Aimed = true
+	Aiming = true
+	CurrentRecoil = S.Recoil.Aimed
+	CurrentSpread = S.Spread.Aimed
+	Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+		UDim2.new(),
+		UDim2.new(),
+		Enum.EasingDirection.Out,
+		Enum.EasingStyle.Sine,
+		S.AimAnimation and S.AimSpeed or 0,
+		true
+	)
+	if S.AimAnimation then
+		local CurrentFOV = Camera.FieldOfView
+		local CurrentCameraOffset = Humanoid.CameraOffset
+		local CurrentTrans = Scope.BackgroundTransparency
+		TweenJoint(LWeld, ArmC0[1], S.ArmC1_Aimed.Left, Sine, S.AimSpeed)
+		TweenJoint(RWeld, ArmC0[2], S.ArmC1_Aimed.Right, Sine, S.AimSpeed)
+		TweenJoint(AnimWeld, CF(0, 1, 0), CF(), Sine, S.AimSpeed)
+		TweenJoint(Grip, Grip.C0, Aimed_GripCF, Sine, S.AimSpeed)
+		TweenJoint(LWeld2, CF(), CF(), Sine, S.AimSpeed)
+		TweenJoint(RWeld2, CF(), CF(), Sine, S.AimSpeed)
+		local X = 0
+		while true do
+			local NewX = X + 1.5 / S.AimSpeed
+			X = (NewX > 90 and 90 or NewX)
+			if (not Aimed) then break end
+			if (not Selected) then break end
+			local Alpha = 1 - COS(RAD(X))
+			Camera.FieldOfView = NumLerp(CurrentFOV, S.MaxZoom, Alpha)
+			if S.GuiScope then
+				Scope.BackgroundTransparency = NumLerp(CurrentTrans, 0, Alpha)
+			end
+			if X == 90 then break end
+			RS:wait()
+		end
+	else
+		LWeld.C0, LWeld.C1 = ArmC0[1], S.ArmC1_Aimed.Left
+		RWeld.C0, RWeld.C1 = ArmC0[2], S.ArmC1_Aimed.Right
+		AnimWeld.C0 = CF(0, 1, 0)
+		Grip.C1 = Aimed_GripCF
+		LWeld2.C1, RWeld2.C1 = CF(), CF()
+		Camera.FieldOfView = S.MaxZoom
+	end
+	Aiming = (not Aimed)
+	if (not Aiming) and S.GuiScope then
+		spawn(function()
+			Steady.Visible = true
+			Scope.BackgroundTransparency = 1
+			Scope.ImageTransparency = 0
+			
+			local Gun_Model = Instance.new("Model")
+			Gun_Model.Name = "Gun_Model"
+			for _, Obj in pairs(Gun:GetChildren()) do
+				if Obj:IsA("BasePart") then
+					local ObjClone = Obj:Clone()
+					ObjClone.Parent = Gun_Model
+					
+					local W = Instance.new("Weld")
+					W.Part0 = ObjClone
+					W.Part1 = Obj
+					W.Parent = ObjClone
+					
+					local PrevTrans = Instance.new("NumberValue")
+					PrevTrans.Name = "PrevTrans"
+					PrevTrans.Value = Obj.Transparency
+					PrevTrans.Parent = Obj
+					
+					Obj.Transparency = 1
+				end
+			end
+			Gun_Model.Parent = Character
+		end)
+		spawn(function()
+			while Aimed do
+				local Ang = (CameraSteady and 0 or (Idleing and AnimAng[2] or AnimAng[4]))
+				if CameraSway ~= 0 then
+					local OffsetX, OffsetY = 0, 0
+					if Idleing then
+						OffsetX = (RAD(COS(Ang * 5 * (CameraSway ^ 0.4))) / 40) * (CameraSway ^ 1.2) * StanceSway * S.ScopeSway
+						OffsetY = (RAD(COS(Ang * 2 * (CameraSway ^ 0.4))) / 40) * (CameraSway ^ 1.2) * StanceSway * S.ScopeSway
+					else
+						OffsetX = (RAD(COS(Ang * 3/2 * (CameraSway ^ 0.4))) / 25) * (CameraSway ^ 1.2) * StanceSway * S.ScopeSway
+						OffsetY = (RAD(COS(Ang * 3/5 * (CameraSway ^ 0.4))) / 25) * (CameraSway ^ 1.2) * StanceSway * S.ScopeSway
+					end
+					RotCamera(OffsetX, OffsetY)
+				end
+				RS:wait()
+			end
+		end)
+	end
+end
+
+function UnAimGun(Exception)
+	local Scope = Gui_Clone:WaitForChild("Scope"):WaitForChild("Img")
+	local Steady = Gui_Clone:WaitForChild("Scope"):WaitForChild("Steady")
+	if (not Exception) then
+		if (not Aimed) then return end
+		if (Reloading and Exception) or Knifing and (not ThrowingGrenade) then return end
+		CurrentRecoil = S.Recoil.Hipfire
+		CurrentSpread = ((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+		if Walking and Aimed then
+			Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+				UDim2.new(0, 150, 0, 150),
+				UDim2.new(0, -75, 0, -75),
+				Enum.EasingDirection.Out,
+				Enum.EasingStyle.Linear,
+				S.AimAnimation and S.AimSpeed or 0,
+				true
+			)
+		elseif Idleing then
+			Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+				UDim2.new(0, 70, 0, 70),
+				UDim2.new(0, -35, 0, -35),
+				Enum.EasingDirection.Out,
+				Enum.EasingStyle.Linear,
+				S.AimAnimation and S.AimSpeed or 0,
+				true
+			)
+		end
+		Aimed = false
+		Aiming = true
+		if S.GuiScope then
+			spawn(function()
+				local Gun_Model = Character:FindFirstChild("Gun_Model")
+				if Gun_Model then
+					Gun_Model:Destroy()
+				end
+				
+				for _, Obj in pairs(Gun:GetChildren()) do
+					if Obj:IsA("BasePart") then
+						local PrevTrans = Obj:FindFirstChild("PrevTrans")
+						
+						Obj.Transparency = PrevTrans.Value
+						PrevTrans:Destroy()
+					end
+				end
+			end)
+		end
+		if S.AimAnimation then
+			local CurrentFOV = Camera.FieldOfView
+			local CurrentCameraOffset = Humanoid.CameraOffset
+			local CurrentTrans = (Scope.BackgroundTransparency == 1 and (S.GuiScope and 0 or 1) or Scope.BackgroundTransparency)
+			Scope.ImageTransparency = 1
+			Steady.Visible = false
+			TweenJoint(LWeld, ArmC0[1], S.ArmC1_UnAimed.Left, Sine, S.AimSpeed)
+			TweenJoint(RWeld, ArmC0[2], S.ArmC1_UnAimed.Right, Sine, S.AimSpeed)
+			TweenJoint(Grip, Grip.C0, CFANG(0, RAD(20), 0), Sine, S.AimSpeed)
+			if S.PlayerAnimations then
+				TweenJoint(LWeld2, CF(), CFANG(0, RAD(ArmTilt), 0), Sine, S.AimSpeed)
+				TweenJoint(RWeld2, CF(), CFANG(0, RAD(ArmTilt), 0), Sine, S.AimSpeed)
+			end
+			local X = 0
+			while true do
+				local NewX = X + 1.5 / S.AimSpeed
+				X = (NewX > 90 and 90 or NewX)
+				if Aimed then break end
+				if (not Selected) then break end
+				local Alpha = 1 - COS(RAD(X))
+				Camera.FieldOfView = NumLerp(CurrentFOV, 70, Alpha)
+				Scope.BackgroundTransparency = NumLerp(CurrentTrans, 1, Alpha)
+				if X == 90 then break end
+				RS:wait()
+			end
+		else
+			Scope.BackgroundTransparency = 1
+			Scope.ImageTransparency = 1
+			Steady.Visible = false
+			LWeld.C0, LWeld.C1 = ArmC0[1], S.ArmC1_UnAimed.Left
+			RWeld.C0, RWeld.C1 = ArmC0[2], S.ArmC1_UnAimed.Right
+			Grip.C1 = CFANG(0, RAD(20), 0)
+			LWeld2.C1, RWeld2.C1 = CFANG(0, RAD(ArmTilt), 0), CFANG(0, RAD(ArmTilt), 0)
+			Camera.FieldOfView = 70
+		end
+		Aiming = Aimed
+	else
+		if S.GuiScope then
+			spawn(function()
+				local Gun_Model = Character:FindFirstChild("Gun_Model")
+				if Gun_Model then
+					Gun_Model:Destroy()
+				end
+				
+				for _, Obj in pairs(Gun:GetChildren()) do
+					if Obj:IsA("BasePart") then
+						local PrevTrans = Obj:FindFirstChild("PrevTrans")
+						
+						Obj.Transparency = PrevTrans.Value
+						PrevTrans:Destroy()
+					end
+				end
+			end)
+		end
+		spawn(function()
+			Aimed = false
+			Aiming = false
+			CurrentRecoil = S.Recoil.Hipfire
+			CurrentSpread = ((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+			if (not Walking) then
+				Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+					UDim2.new(0, 70, 0, 70),
+					UDim2.new(0, -35, 0, -35),
+					Enum.EasingDirection.Out,
+					Enum.EasingStyle.Linear,
+					S.AimAnimation and S.AimSpeed or 0,
+					true
+				)
+			else
+				Gui_Clone.CrossHair.Box:TweenSizeAndPosition(
+					UDim2.new(0, 150, 0, 150),
+					UDim2.new(0, -75, 0, -75),
+					Enum.EasingDirection.Out,
+					Enum.EasingStyle.Linear,
+					S.AimAnimation and S.AimSpeed or 0,
+					true
+				)
+			end
+			local CurrentFOV = Camera.FieldOfView
+			local CurrentCameraOffset = Humanoid.CameraOffset
+			local CurrentTrans = (Scope.BackgroundTransparency == 1 and (S.GuiScope and 0 or 1) or Scope.BackgroundTransparency)
+			Scope.ImageTransparency = 1
+			Steady.Visible = false
+			if LWeld:FindFirstChild("TweenCode") then LWeld.TweenCode:Destroy() end
+			if RWeld:FindFirstChild("TweenCode") then RWeld.TweenCode:Destroy() end
+			if Grip:FindFirstChild("TweenCode") then Grip.TweenCode:Destroy() end
+			if LWeld2:FindFirstChild("TweenCode") then LWeld2.TweenCode:Destroy() end
+			if RWeld2:FindFirstChild("TweenCode") then RWeld2.TweenCode:Destroy() end
+			if S.AimAnimation then
+				local X = 0
+				while true do
+					local NewX = X + 1.5 / S.AimSpeed
+					X = (NewX > 90 and 90 or NewX)
+					if Aimed then break end
+					if (not Selected) then break end
+					local Alpha = 1 - COS(RAD(X))
+					Camera.FieldOfView = NumLerp(CurrentFOV, 70, Alpha)
+					Scope.BackgroundTransparency = NumLerp(CurrentTrans, 1, Alpha)
+					if X == 90 then break end
+					RS:wait()
+				end
+			else
+				Scope.BackgroundTransparency = 1
+				Scope.ImageTransparency = 1
+				Steady.Visible = false
+				Camera.FieldOfView = 70
+			end
+		end)
+	end
+end
+
+function CreateBullet(Direction)
+	local Origin = Gun.Main.CFrame.p
+	local BulletMass = S.BulletSize.X * S.BulletSize.Y * S.BulletSize.Z
+	local BulletCF = CF(Origin, Origin + Direction)
+	local Bullet = Instance.new("Part")
+	Bullet.BrickColor = S.BulletColor
+	Bullet.Name = "Bullet"
+	Bullet.CanCollide = false
+	Bullet.FormFactor = "Custom"
+	Bullet.Size = S.BulletSize
+	Bullet.BottomSurface = "Smooth"
+	Bullet.TopSurface = "Smooth"
+	local Mesh = Instance.new("BlockMesh")
+	Mesh.Scale = S.BulletMeshSize
+	Mesh.Parent = Bullet
+	local BF = Instance.new("BodyForce")
+	BF.force = VEC3(0, BulletMass * (196.2 - S.BulletDropPerSecond), 0)
+	BF.Parent = Bullet
+	Bullet.Parent = Gun_Ignore
+	Bullet.CFrame = BulletCF + Direction * 3
+	Bullet.Velocity = Direction * S.BulletVelocity
+	return Bullet
+end
+
+function CreateBulletHole(HitPos, HitObj)
+	local SurfaceCF = GetHitSurfaceCFrame(HitPos, HitObj)
+	local SurfaceDir = CF(HitObj.CFrame.p, SurfaceCF.p)
+	local SurfaceDist = SurfaceDir.lookVector * (HitObj.CFrame.p - SurfaceCF.p).magnitude / 2
+	local SurfaceOffset = HitPos - SurfaceCF.p + SurfaceDist
+	local SurfaceCFrame = SurfaceDir + SurfaceDist + SurfaceOffset
+	local HitMark = Instance.new("Part")
+	HitMark.BrickColor = BrickColor.new("Black")
+	HitMark.Transparency = 1
+	HitMark.Anchored = true
+	HitMark.CanCollide = false
+	HitMark.FormFactor = "Custom"
+	HitMark.Size = VEC3(1, 1, 0.2)
+	HitMark.TopSurface = 0
+	HitMark.BottomSurface = 0
+	local Mesh = Instance.new("BlockMesh")
+	Mesh.Offset = VEC3(0, 0, -0.05)
+	Mesh.Scale = VEC3(S.BulletHoleSize, S.BulletHoleSize, 0)
+	Mesh.Parent = HitMark
+	local Decal = Instance.new("Decal")
+	Decal.Face = Enum.NormalId.Front
+	Decal.Texture = S.BulletHoleTexture
+	Decal.Parent = HitMark
+	HitMark.Parent = Gun_Ignore
+	HitMark.CFrame = SurfaceCFrame
+	if (not HitObj.Anchored) then
+		local Weld = Instance.new("Weld", HitMark)
+		Weld.Part0 = HitObj
+		Weld.Part1 = HitMark
+		Weld.C0 = HitObj.CFrame:toObjectSpace(SurfaceCFrame)
+		HitMark.Anchored = false
+	end
+	delay(S.BulletHoleVisibleTime, function()
+		if S.BulletHoleDisappearTime > 0 then
+			local X = 0
+			while true do
+				if X == 90 then break end
+				if (not Selected) then break end
+				local NewX = X + (1.5 / S.BulletHoleDisappearTime)
+				X = (NewX > 90 and 90 or NewX)
+				local Alpha = X / 90
+				Decal.Transparency = NumLerp(0, 1, Alpha)
+				RS:wait()
+			end
+			HitMark:Destroy()
+		else
+			HitMark:Destroy()
+		end
+	end)
+end
+
+function CreateShockwave(Center, Radius)
+	local Shockwave = Instance.new("Part")
+	Shockwave.BrickColor = S.ShockwaveColor
+	Shockwave.Material = Enum.Material.SmoothPlastic
+	Shockwave.Name = "Shockwave"
+	Shockwave.Anchored = true
+	Shockwave.CanCollide = false
+	Shockwave.FormFactor = Enum.FormFactor.Symmetric
+	Shockwave.Size = VEC3(1, 1, 1)
+	Shockwave.BottomSurface = Enum.SurfaceType.Smooth
+	Shockwave.TopSurface = Enum.SurfaceType.Smooth
+	local Mesh = Instance.new("SpecialMesh")
+	Mesh.MeshType = Enum.MeshType.Sphere
+	Mesh.Scale = VEC3()
+	Mesh.Parent = Shockwave
+	Shockwave.Parent = Gun_Ignore
+	Shockwave.CFrame = CF(Center)
+	spawn(function()
+		for i = 0, 1, (1 / (60 * S.ShockwaveDuration)) do
+			local Scale = 2 * Radius * i
+			Mesh.Scale = VEC3(Scale, Scale, Scale)
+			Shockwave.Transparency = i
+			RS:wait()
+		end
+		Shockwave:Destroy()
+	end)
+end
+
+function Damage(HitObj, HitPos)
+	local HeadVal = S.Multipliers.Head
+	local ChestVal = S.Multipliers.Chest
+	local LimbsVal = S.Multipliers.Limbs
+	if Humanoid.Health ~= 0 then
+		if HitObj and HitObj.Parent then
+			local HumanoidFound = false
+			local HitHumanoid = nil
+			if HitObj.Parent.ClassName == "Hat" then
+				if FindFirstClass(HitObj.Parent.Parent, "Humanoid") then
+					HitHumanoid = FindFirstClass(HitObj.Parent.Parent, "Humanoid")
+					HumanoidFound = true
+					if HitHumanoid.Health > 0 then
+						if IsEnemy(HitHumanoid) then
+							local CreatorTag = Instance.new("ObjectValue")
+							CreatorTag.Value = Player
+							CreatorTag.Name = "creator"
+							CreatorTag.Parent = HitHumanoid
+							HitHumanoid:TakeDamage(S.Damage * RAND(HeadVal, HeadVal + 0.1, 0.01))
+							MarkHit()
+						end
+					end
+				end
+			else
+				if FindFirstClass(HitObj.Parent, "Humanoid") then
+					HitHumanoid = FindFirstClass(HitObj.Parent, "Humanoid")
+					HumanoidFound = true
+					if HitHumanoid.Health > 0 then
+						if IsEnemy(HitHumanoid) then
+							local CreatorTag = Instance.new("ObjectValue")
+							CreatorTag.Value = Player
+							CreatorTag.Name = "creator"
+							CreatorTag.Parent = HitHumanoid
+							local ChosenDamage = 0
+							if HitObj.Name == "Head" then
+								ChosenDamage = S.Damage * RAND(HeadVal, HeadVal + 0.1, 0.01)
+							elseif HitObj.Name == "Torso" then
+								ChosenDamage = S.Damage * RAND(ChestVal, ChestVal + 0.1, 0.01)
+							else
+								ChosenDamage = S.Damage * RAND(LimbsVal, LimbsVal + 0.1, 0.01)
+							end
+							HitHumanoid:TakeDamage(ChosenDamage)
+							MarkHit()
+						end
+					end
+				end
+			end
+			if (not HumanoidFound) then
+				if S.BulletHoles then
+					CreateBulletHole(HitPos, HitObj)
+				end
+				if S.Shockwaves then
+					CreateShockwave(HitPos, S.ShockwaveRadius)
+				end
+			end
+			return HitHumanoid
+		end
+	end
+end
+
+function PenetrateWall(HitPos, Direction, HitHumanoid, OriginPos, Bullet)
+	local HitDist = (HitPos - OriginPos).magnitude
+	local Thickness, Wall, WallHitPos = 0, nil, nil
+	for i = 0.1, S.Penetration, 0.1 do
+		local WallRay = Ray.new(HitPos + (Direction * i), -Direction)
+		local TempWall, TempWallHitPos = game.Workspace:FindPartOnRayWithIgnoreList(WallRay, Ignore)
+		if TempWall then
+			Thickness = i
+			Wall, WallHitPos = TempWall, TempWallHitPos
+			break
+		end
+	end
+	if Wall then
+		CreateBulletHole(WallHitPos, Wall)
+		if S.InstantHit then
+			local HitObj2, HitPos2 = nil, nil
+			if HitHumanoid then
+				HitObj2, HitPos2 = AdvRayCast(WallHitPos, Direction, S.BulletRange - HitDist, {HitHumanoid.Parent,unpack(Ignore)})
+			else
+				HitObj2, HitPos2 = AdvRayCast(WallHitPos, Direction, S.BulletRange - HitDist)
+			end
+			Damage(HitObj2, HitPos2)
+			return HitPos2
+		else
+			local LastPos = WallHitPos
+			local TotalDistTraveled = 0
+			spawn(function()
+				while true do
+					RS:wait()
+					if TotalDistTraveled >= S.BulletRange - HitDist then
+						Bullet:Destroy()
+						break
+					end
+					local DistTraveled = (Bullet.Position - LastPos).magnitude
+					local NewDirection = (Bullet.Position - LastPos).unit
+					local TempHitObj, TempHitPos = nil, nil
+					if HitHumanoid then
+						TempHitObj, TempHitPos = AdvRayCast(LastPos, NewDirection, DistTraveled, {HitHumanoid.Parent,unpack(Ignore)})
+					else
+						TempHitObj, TempHitPos = AdvRayCast(LastPos, NewDirection, DistTraveled)
+					end
+					if TempHitObj then
+						Damage(TempHitObj, TempHitPos)
+						Bullet:Destroy()
+						return TempHitPos
+					else
+						LastPos = Bullet.Position
+						TotalDistTraveled = TotalDistTraveled + DistTraveled
+					end
+				end
+			end)
+		end
+	else
+		if Bullet then Bullet:Destroy() end
+		return HitPos
+	end
+end
+
+function IsEnemy(Human)
+	local Plyr = game.Players:GetPlayerFromCharacter(Human.Parent)
+	if (not Plyr) then return S.CanDamageNPCs end
+	return S.AllowFriendlyFire or (Plyr.TeamColor ~= Player.TeamColor or Plyr.Neutral)
+end
+
+function ReloadAnim()
+	TweenJoint(LWeld2, CF(), CF(), Sine, 0.15)
+	TweenJoint(RWeld2, CF(), CF(), Sine, 0.15)
+	local Speed = S.ReloadTime / 2
+	local Mag_Parts = {}
+			
+	for _, Obj in pairs(Gun:GetChildren()) do
+		if Obj.Name == "Mag" and Obj:IsA("BasePart") then
+			INSERT(Mag_Parts, {Original = Obj, Clone1 = Obj:Clone(), Clone2 = Obj:Clone()})
+		end
+	end
+	
+	local W1 = nil
+	local W2 = nil
+	
+	local SequenceTable = {
+		
+		function()
+			
+			for Index, Mag in pairs(Mag_Parts) do
+				Mag.Original.Transparency = 1
+				Mag.Clone1.Parent = Gun_Ignore
+				Mag.Clone1.CanCollide = true
+				
+				if Index ~= 1 then
+					local W = Instance.new("Weld")
+					W.Part0 = Mag_Parts[1].Clone1
+					W.Part1 = Mag.Clone1
+					W.C0 = Mag_Parts[1].Clone1.CFrame:toObjectSpace(Mag.Clone1.CFrame)
+					W.Parent = Mag_Parts[1].Clone1
+				end
+			end
+			
+			W1 = Instance.new("Weld")
+			W1.Part0 = Mag_Parts[1].Clone1
+			W1.Part1 = Handle
+			W1.C0 = Mag_Parts[1].Original.CFrame:toObjectSpace(Handle.CFrame)
+			W1.Parent = Mag_Parts[1].Clone1
+			
+			TweenJoint(LWeld, ArmC0[1], CF(0, 0.61, 0) * CFANG(RAD(70), 0, 0), Linear, 0.5 * Speed)
+			TweenJoint(RWeld, ArmC0[2], CF(0.4, 0.09, -0.21) * CFANG(RAD(-20), RAD(3), 0), Linear, 0.5 * Speed)
+			TweenJoint(Grip, Grip.C0, CFANG(0, RAD(10), 0), Linear, 0.5 * Speed)
+			wait(0.5 * Speed)
+			
+		end;
+		
+		function()
+			
+			TweenJoint(RWeld, ArmC0[2], CF(0.4, -0.01, -0.31) * CFANG(RAD(-22), RAD(3), 0), Sine, 0.3 * Speed)
+			wait(0.2 * Speed)
+			
+		end;
+		
+		function()
+			
+			W1:Destroy()
+			Mag_Parts[1].Clone1.Velocity = Handle.Velocity + Handle.CFrame:vectorToWorldSpace(VEC3(0,-1,0)) * 20
+			spawn(function()
+				while Mag_Parts[1].Clone1.Velocity.magnitude > 0.1 do wait() end
+				for _, Mag in pairs(Mag_Parts) do
+					Mag.Clone1.Anchored = true
+					Mag.Clone1:BreakJoints()
+				end
+			end)
+			
+			for Index, Mag in pairs(Mag_Parts) do
+				Mag.Clone2.Parent = Gun_Ignore
+				
+				if Index ~= 1 then
+					local W = Instance.new("Weld")
+					W.Part0 = Mag_Parts[1].Clone2
+					W.Part1 = Mag.Clone2
+					W.C0 = Mag_Parts[1].Clone2.CFrame:toObjectSpace(Mag.Clone2.CFrame)
+					W.Parent = Mag_Parts[1].Clone2
+				end
+			end
+			
+			W2 = Instance.new("Weld")
+			W2.Part0 = FakeLArm
+			W2.Part1 = Mag_Parts[1].Clone2
+			W2.C0 = CF(0, -1, 0) * CFANG(RAD(-90), 0, 0)
+			W2.Parent = FakeLArm
+			wait(0.1)
+			
+		end;
+		
+		function()
+			
+			local FakeLArmCF = LWeld.Part0.CFrame * ArmC0[1] * (CF(0.3, 1.85, -0.31) * CFANG(RAD(-20), RAD(30), RAD(-60))):inverse()
+			local FakeRArmCF = RWeld.Part0.CFrame * ArmC0[2] * (CF(0.4, -0.1, -0.21) * CFANG(RAD(-20), RAD(5), RAD(10))):inverse()
+			local HandleCF = FakeRArm.CFrame:toObjectSpace(Grip.Part0.CFrame * Grip.C0)
+			local Mag_Original_CF = Handle.CFrame:toObjectSpace(Mag_Parts[1].Original.CFrame)
+			local MagC0 = FakeLArmCF:toObjectSpace(FakeRArmCF * HandleCF * Mag_Original_CF)
+			
+			TweenJoint(LWeld, ArmC0[1], CF(0.3, 1.85, -0.31) * CFANG(RAD(-20), RAD(30), RAD(-60)), Sine, 0.6 * Speed)
+			TweenJoint(RWeld, ArmC0[2], CF(0.4, -0.1, -0.21) * CFANG(RAD(-20), RAD(5), RAD(10)), Sine, 0.6 * Speed)
+			TweenJoint(Grip, Grip.C0, CF(), Sine, 0.6 * Speed)
+			TweenJoint(W2, MagC0, CF(), Sine, 0.6 * Speed)
+			wait(0.7 * Speed)
+			
+		end;
+		
+		function()
+			
+			for _, Mag in pairs(Mag_Parts) do
+				Mag.Original.Transparency = 0
+				Mag.Clone2:Destroy()
+			end
+			
+			TweenJoint(LWeld, ArmC0[1], S.ArmC1_UnAimed.Left, Sine, 0.5 * Speed)
+			TweenJoint(RWeld, ArmC0[2], S.ArmC1_UnAimed.Right, Sine, 0.5 * Speed)
+			TweenJoint(Grip, Grip.C0, CFANG(0, RAD(20), 0), Sine, 0.5 * Speed)
+			wait(0.5 * Speed)
+			
+		end;
+		
+	}
+	
+	for _,ReloadFunction in pairs(SequenceTable) do
+		if BreakReload then
+			break
+		end
+		ReloadFunction()
+	end
+	
+	if W1 then W1:Destroy() end
+	if W2 then W2:Destroy() end
+	for _, Mag in pairs(Mag_Parts) do
+		Mag.Clone1:Destroy()
+		Mag.Clone2:Destroy()
+	end
+end
+
+function Reload()
+	Running = false
+	if Ammo.Value < ClipSize.Value and (not Reloading) and StoredAmmo.Value > 0 then
+		AmmoInClip = (AmmoInClip == 0 and Ammo.Value or AmmoInClip)
+		Ammo.Value = 0
+		Reloading = true
+		if Aimed then UnAimGun(S.ReloadAnimation) end
+		Gui_Clone.CrossHair.Reload.Visible = true
+		if Handle:FindFirstChild("ReloadSound") then Handle.ReloadSound:Play() end
+		if S.ReloadAnimation then
+			wait()
+			ReloadAnim()
+		else
+			local StartReload = tick()
+			while true do
+				if BreakReload then break end
+				if (tick() - StartReload) >= S.ReloadTime then break end
+				RS:wait()
+			end
+		end
+		if (not BreakReload) then
+			if StoredAmmo.Value >= ClipSize.Value then
+				Ammo.Value = ClipSize.Value
+				if AmmoInClip > 0 then
+					StoredAmmo.Value = StoredAmmo.Value - (ClipSize.Value - AmmoInClip)
+				else
+					StoredAmmo.Value = StoredAmmo.Value - ClipSize.Value
+				end
+			elseif StoredAmmo.Value < ClipSize.Value and StoredAmmo.Value > 0 then
+				Ammo.Value = StoredAmmo.Value
+				StoredAmmo.Value = 0
+			end
+		end
+		BreakReload = false
+		Reloading = false
+		if Selected then
+			AmmoInClip = 0
+			Gui_Clone.CrossHair.Reload.Visible = false
+		end
+	end
+end
+
+function FindFirstClass(Object, Class)
+	local FoundObject = nil
+	for _, Obj in pairs(Object:GetChildren()) do
+		if Obj.ClassName == Class then
+			FoundObject = Obj
+			break
+		end
+	end
+	return FoundObject
+end
+
+function IsIgnored(Obj)
+	for _,v in pairs(Ignore) do
+		if Obj == v or Obj:IsDescendantOf(v) then
+			return true
+		end
+	end
+	return false
+end
+
+function GetHitSurfaceCFrame(HitPos,Obj)
+	local SurfaceCF = {
+		{"Back",Obj.CFrame * CF(0,0,Obj.Size.z)};
+		{"Bottom",Obj.CFrame * CF(0,-Obj.Size.y,0)};
+		{"Front",Obj.CFrame * CF(0,0,-Obj.Size.z)};
+		{"Left",Obj.CFrame * CF(-Obj.Size.x,0,0)};
+		{"Right",Obj.CFrame * CF(Obj.Size.x,0,0)};
+		{"Top",Obj.CFrame * CF(0,Obj.Size.y,0)}
+	}
+	local ClosestDist = HUGE
+	local ClosestSurface = nil
+	for _,v in pairs(SurfaceCF) do
+		local SurfaceDist = (HitPos - v[2].p).magnitude
+		if SurfaceDist < ClosestDist then
+			ClosestDist = SurfaceDist
+			ClosestSurface = v
+		end
+	end
+	return ClosestSurface[2]
+end
+
+function AdvRayCast(Origin, Direction, Dist, CustomIgnore)
+	local NewIgnore = (CustomIgnore and CustomIgnore or Ignore)
+	local NewRay = Ray.new(Origin, Direction * (Dist > 999 and 999 or Dist))
+	local HitObj, HitPos = game.Workspace:FindPartOnRayWithIgnoreList(NewRay, NewIgnore)
+	local LastPos = HitPos
+	local FinalHitObj, FinalHitPos = nil, nil
+	local RepTimes = math.floor(Dist / 999)
+	if (not HitObj) and (Dist > 999) then
+		for i = 0, RepTimes do
+			local NewDist = (i == RepTimes and  (Dist - (LastPos - Origin).magnitude) or 999)
+			local Ray2 = Ray.new(LastPos, Direction * NewDist)
+			local HitObj2, HitPos2 = game.Workspace:FindPartOnRayWithIgnoreList(Ray2, NewIgnore)
+			if i ~= RepTimes then
+				if HitObj2 then
+					FinalHitObj, FinalHitPos = HitObj2, HitPos2
+					break
+				end
+			elseif i == RepTimes then
+				FinalHitObj, FinalHitPos = HitObj2, HitPos2
+			end
+			LastPos = HitPos2
+		end
+		return FinalHitObj, FinalHitPos
+	elseif HitObj or (Dist <= 999) then
+		return HitObj, HitPos
+	end
+end
+
+function KnifeAnim()
+	local Connection = nil
+	local Blade = Instance.new("Part")
+	Blade.BrickColor = BrickColor.new("Really black")
+	Blade.Name = "Blade"
+	Blade.CanCollide = false
+	Blade.FormFactor = Enum.FormFactor.Custom
+	Blade.Size = VEC3(0.5, 2.5, 1)
+	local Mesh = Instance.new("SpecialMesh")
+	Mesh.MeshId = S.KnifeMeshId
+	Mesh.MeshType = Enum.MeshType.FileMesh
+	Mesh.Scale = VEC3(0.7, 0.7, 0.7)
+	Mesh.TextureId = S.KnifeTextureId
+	Mesh.Parent = Blade
+	Blade.Parent = Gun_Ignore
+	local BladeWeld = Instance.new("Weld")
+	BladeWeld.Part0 = Blade
+	BladeWeld.Part1 = FakeLArm
+	BladeWeld.C0 = CFANG(RAD(-90), 0, RAD(180))
+	BladeWeld.C1 = CF(0, -1, 0.75)
+	BladeWeld.Parent = Blade
+	Connection = Blade.Touched:connect(function(Obj)
+		if Obj then
+			local HitHumanoid = FindFirstClass(Obj.Parent, "Humanoid")
+			if HitHumanoid and IsEnemy(HitHumanoid) then
+				local CreatorTag = Instance.new("ObjectValue")
+				CreatorTag.Name = "creator"
+				CreatorTag.Value = Player
+				CreatorTag.Parent = HitHumanoid
+				HitHumanoid:TakeDamage(HitHumanoid.MaxHealth)
+				MarkHit()
+			end
+		end
+	end)
+	TweenJoint(LWeld2, CF(), CFANG(0, RAD(90), 0), Linear, 0.05)
+	TweenJoint(LWeld, ArmC0[1], CF(-0.1, 0.2, -0.1) * CFANG(0, 0, RAD(-20)), Linear, 0.05)
+	TweenJoint(RWeld, ArmC0[2], CFANG(RAD(-30), 0, 0), Linear, 0.1)
+	TweenJoint(Grip, Grip.C0, CF(), Linear, 0.1)
+	spawn(function()
+		local Force = HRP.CFrame.lookVector * 8e4
+		local BF = Instance.new("BodyForce")
+		BF.force = Force
+		BF.Parent = HRP
+		delay(0.03, function()
+			BF.force = -Force / 2
+			wait(0.03)
+			BF:Destroy()
+		end)
+	end)
+	wait(0.05)
+	RotCamera(RAD(6), 0, true, 0.1)
+	delay(0.1, function()
+		RotCamera(RAD(-2), 0, true, 0.05)
+	end)
+	TweenJoint(LWeld, ArmC0[1], CF(0.8, 1.7, 0.2) * CFANG(0, 0, RAD(-80)), Linear, 0.06)
+	wait(0.2)
+	Connection:disconnect()
+	wait(0.2)
+	TweenJoint(LWeld2, CF(), CF(), Linear, 0.15)
+	TweenJoint(LWeld, ArmC0[1], S.ArmC1_UnAimed.Left, Linear, 0.15)
+	TweenJoint(RWeld, ArmC0[2], S.ArmC1_UnAimed.Right, Linear, 0.15)
+	Blade:Destroy()
+end
+
+function CreateGrenade()
+	local Grenade = Instance.new("Model")
+	
+	local Center = Instance.new("Part")
+	Center.BrickColor = S.GrenadeColor
+	Center.Name = "Center"
+	Center.CanCollide = false
+	Center.Elasticity = 0
+	Center.FormFactor = Enum.FormFactor.Custom
+	Center.Size = S.GrenadeSize
+	Center.BottomSurface = Enum.SurfaceType.Smooth
+	Center.TopSurface = Enum.SurfaceType.Smooth
+	Center.Parent = Grenade
+	
+	local Mesh1 = Instance.new("SpecialMesh")
+	Mesh1.MeshType = Enum.MeshType.Sphere
+	Mesh1.Parent = Center
+	
+	return Grenade
+end
+
+function CreateKnife()
+	local Knife = Instance.new("Part")
+	Knife.BrickColor = S.GrenadeColor
+	Knife.Name = "Knife"
+	Knife.CanCollide = false
+	Knife.FormFactor = Enum.FormFactor.Custom
+	Knife.Size = VEC3(1, 1, 3)
+	
+	local Mesh = Instance.new("SpecialMesh")
+	Mesh.MeshId = "http://www.roblox.com/asset/?id=12221720"
+	Mesh.MeshType = Enum.MeshType.FileMesh
+	Mesh.Scale = VEC3(0.5, 0.5, 0.5)
+	Mesh.Parent = Knife
+	
+	return Knife
+end
+
+function CreateTarget()
+	local Target = Instance.new("Model")
+	
+	local Center = Instance.new("Part")
+	Center.BrickColor = BrickColor.new("Bright red")
+	Center.Material = Enum.Material.SmoothPlastic
+	Center.Transparency = 0.3
+	Center.Name = "Center"
+	Center.Anchored = true
+	Center.CanCollide = false
+	Center.FormFactor = Enum.FormFactor.Custom
+	Center.Size = VEC3(4, 0.2, 4)
+	Center.Parent = Target
+	local CylinderMesh = Instance.new("CylinderMesh")
+	CylinderMesh.Parent = Center
+	
+	local Line = Instance.new("Part")
+	Line.BrickColor = BrickColor.new("Bright red")
+	Line.Transparency = 0.3
+	Line.Name = "Line"
+	Line.CFrame = Center.CFrame * CFrame.new(0, 5.1, 0)
+	Line.Anchored = true
+	Line.CanCollide = false
+	Line.FormFactor = Enum.FormFactor.Custom
+	Line.Size = VEC3(0.4, 10, 0.4)
+	Line.BottomSurface = Enum.SurfaceType.Smooth
+	Line.TopSurface = Enum.SurfaceType.Smooth
+	Line.Parent = Target
+	
+	return Target
+end
+
+function DetonateExplosive(Grenade)
+	CreateShockwave(Grenade.Position, S.GrenadeBlastRadius)
+	local GrenadePos = Grenade.Position
+	local E = Instance.new("Explosion")
+	E.BlastPressure = S.GrenadeBlastPressure
+	E.BlastRadius = S.GrenadeBlastRadius
+	E.DestroyJointRadiusPercent = (S.GrenadeRangeBasedDamage and 0 or 1)
+	E.ExplosionType = S.GrenadeExplosionType
+	E.Position = GrenadePos
+	E.Hit:connect(function(HObj, HDist)
+		if HObj.Name == "Torso" and (not HObj:IsDescendantOf(Character)) then
+			if S.GrenadeRangeBasedDamage then
+				local ClosestPart = nil
+				local ClosestDist = math.huge
+				
+				for _, P in pairs(HObj.Parent:GetChildren()) do
+					if P:IsA("BasePart") then
+						local Dist = (GrenadePos - P.Position).magnitude
+						if Dist < ClosestDist then
+							ClosestPart = P
+							ClosestDist = Dist
+						end
+					end
+				end
+				
+				local Dir = (ClosestPart.Position - GrenadePos).unit
+				local H, P = AdvRayCast(GrenadePos, Dir, 999)
+				local RayHitHuman = H:IsDescendantOf(HObj.Parent)
+				if (S.GrenadeRayCastExplosions and RayHitHuman) or (not S.GrenadeRayCastExplosions) then
+					local HitHumanoid = FindFirstClass(HObj.Parent, "Humanoid")
+					if HitHumanoid and HitHumanoid.Health > 0 and IsEnemy(HitHumanoid) then
+						local DistFactor = ClosestDist / S.GrenadeBlastRadius
+						local DistInvert = math.max(1 - DistFactor,0)
+						local NewDamage = DistInvert * S.LethalGrenadeDamage
+						
+						local CreatorTag = Instance.new("ObjectValue")
+						CreatorTag.Value = Player
+						CreatorTag.Name = "creator"
+						CreatorTag.Parent = HitHumanoid
+						HitHumanoid:TakeDamage(NewDamage)
+						MarkHit()
+					end
+				end
+			else
+				local HitHumanoid = FindFirstClass(HObj.Parent, "Humanoid")
+				if HitHumanoid and HitHumanoid.Health > 0 and IsEnemy(HitHumanoid) then
+					local CreatorTag = Instance.new("ObjectValue")
+					CreatorTag.Value = Player
+					CreatorTag.Name = "creator"
+					CreatorTag.Parent = HitHumanoid
+					MarkHit()
+				end
+			end
+		end
+	end)
+	E.Parent = game.Workspace
+	
+	wait()
+	
+	Grenade.Parent:Destroy()
+end
+
+function DetonateSmoke(Grenade)
+	CreateShockwave(Grenade.Position, S.GrenadeEffectRadius)
+	local GrenadePos = Grenade.Position
+	
+	spawn(function()
+		for i = 1, math.floor(S.GrenadeEffectRadius / 5) + RAND(5, 10) do
+			local Size = RAND(S.GrenadeEffectRadius * 0.6, S.GrenadeEffectRadius * 0.8)
+			local Dist = RAND(0, S.GrenadeEffectRadius - Size)
+			local XRot, YRot = RAD(RAND(0, 180, 10)), RAD(RAND(0, 360, 10))
+			local RotLV = (CFANG(0, YRot, 0) * CFANG(XRot, 0, 0)).lookVector
+			local Pos = GrenadePos + (RotLV * VEC3(Dist, Dist / 2, Dist))
+			
+			local Smoke = Instance.new("Part")
+			Smoke.Transparency = 1
+			Smoke.Name = "Smoke"
+			Smoke.Anchored = true
+			Smoke.CanCollide = false
+			Smoke.FormFactor = Enum.FormFactor.Symmetric
+			Smoke.Size = VEC3(1, 1, 1)
+			Smoke.TopSurface = Enum.SurfaceType.Smooth
+			Smoke.BottomSurface = Enum.SurfaceType.Smooth
+			
+			local Mesh = Instance.new("SpecialMesh")
+			Mesh.MeshType = Enum.MeshType.Sphere
+			Mesh.Scale = VEC3(Size, Size, Size)
+			Mesh.Parent = Smoke
+			
+			Smoke.Parent = Gun_Ignore
+			Smoke.CFrame = CF(Pos)
+			
+			spawn(function()
+				local Trans = RAND(0.3, 0.5, 0.01)
+				for X = 0, 90, 2 do
+					Smoke.CFrame = CF(GrenadePos:lerp(Pos, Sine(X)))
+					Smoke.Transparency = NumLerp(1, Trans, Sine(X))
+					RS:wait()
+				end
+				
+				wait(S.GrenadeEffectTime)
+				
+				for X = 0, 90, 0.5 do
+					Smoke.CFrame = CF(Pos:lerp(Pos + VEC3(0, 20, 0), 1 - COS(RAD(X))))
+					Smoke.Transparency = NumLerp(Trans, 1, Sine(X))
+					RS:wait()
+				end
+				
+				Smoke:Destroy()
+			end)
+			
+			if i % 3 == 0 then
+				RS:wait()
+			end
+		end
+	end)
+	
+	wait()
+	
+	Grenade.Parent:Destroy()
+end
+
+function ThrowGrenade(Type)
+	local Grenade0 = nil
+	if S.TrajectoryAssist then
+		spawn(function()
+			local X = 0
+			local Vel = (Type == 1 and S.LethalGrenadeThrowVelocity or S.TacticalGrenadeThrowVelocity)
+			
+			local GetX = function(Ang, T)
+				local Vx = Vel * math.cos(Ang)
+				return Vx * T
+			end
+			
+			local GetY = function(Ang, T)
+				local V0y = Vel * math.sin(Ang)
+				local Vy = V0y + (-196.2 * T)
+				return (Vy * T) - (-98.1 * T * T)
+			end
+			
+			local Target = CreateTarget()
+			Target.Parent = game.Workspace
+			Target.PrimaryPart = Target:WaitForChild("Center")
+			
+			while (Keys[S.LethalGrenadeKey] or Keys[S.TacticalGrenadeKey]) and Selected do
+				X = X + math.rad(10)
+				for _,v in pairs(Target:GetChildren()) do
+					v.Transparency = 0.2 + ((math.sin(X) + 1) / 5)
+				end
+				
+				local Lines = {}
+				local LastX, LastY = nil, nil
+				for T = 0, 10, 0.1 do
+					local XPos = GetX(math.rad(7) - HeadRot, T)
+					local YPos = GetY(math.rad(7) - HeadRot, T)
+					if LastX and LastY then
+						local LookV3 = HRP.CFrame.lookVector
+						local LastPos = (Head.CFrame * CF(1.5, 0, 0)).p + (LookV3 * LastX) + VEC3(0, LastY, 0)
+						local NewPos = (Head.CFrame * CF(1.5, 0, 0)).p + (LookV3 * XPos) + VEC3(0, YPos, 0)
+						local LineCF = CF(LastPos, NewPos)
+						local Dist = (LastPos - NewPos).magnitude
+						local NewDist = Dist
+						
+						local H, P = AdvRayCast(LastPos, (NewPos - LastPos), 1, {Camera, unpack(Ignore)})
+						if H then
+							NewDist = (P - LastPos).magnitude
+							
+							local SurfaceCF = GetHitSurfaceCFrame(P, H)
+							local SurfaceDir = CF(H.CFrame.p, SurfaceCF.p)
+							local SurfaceDist = SurfaceDir.lookVector * (H.CFrame.p - SurfaceCF.p).magnitude / 2
+							local SurfaceOffset = P - SurfaceCF.p + SurfaceDist
+							local SurfaceCFrame = SurfaceDir + SurfaceDist + SurfaceOffset
+							
+							Target:SetPrimaryPartCFrame(SurfaceCFrame * CFANG(RAD(-90), 0, 0))
+							
+							Target.Parent = Camera
+						else
+							Target.Parent = nil
+						end
+						
+						local Line = Instance.new("Part")
+						Line.BrickColor = BrickColor.Red()
+						Line.Material = Enum.Material.SmoothPlastic
+						Line.Transparency = 0.2 + ((math.sin(X) + 1) / 5)
+						Line.Anchored = true
+						Line.CanCollide = false
+						Line.FormFactor = Enum.FormFactor.Custom
+						Line.Size = Vector3.new(0.4, 0.4, NewDist)
+						Line.TopSurface = Enum.SurfaceType.Smooth
+						Line.BottomSurface = Enum.SurfaceType.Smooth
+						Line.CFrame = LineCF + (LineCF.lookVector * NewDist / 2)
+						Line.Parent = Camera
+						
+						table.insert(Lines, Line)
+						
+						LastX,LastY = XPos,YPos
+						
+						if H then break end
+					else
+						LastX,LastY = XPos,YPos
+					end
+				end
+				
+				wait()
+				
+				for _,Line in pairs(Lines) do
+					Line:Destroy()
+				end
+			end
+			
+			Target:Destroy()
+		end)
+	end
+	
+	local AnimTable = {
+		function()
+			TweenJoint(LWeld, CF(-1.5, 0, 0), CF(0, 0.6, 0), Linear, 0.2)
+			TweenJoint(RWeld, CF(1.5, 0, 0) * CFANG(0, 0, RAD(-10)), CF(0, 0.6, 0), Linear, 0.2)
+			TweenJoint(Grip, Grip.C0, CFANG(0, RAD(10), 0), Linear, 0.2)
+			wait(0.3)
+		end;
+	
+		function()
+			Grip.Part0 = Torso
+			Grip.C1 = CF(-1, 0.5, -0.5)
+			
+			if S.LethalGrenadeType == 3 and Type == 1 then
+				Grenade0 = CreateKnife()
+				Grenade0.Parent = Gun_Ignore
+				
+				local Weld = Instance.new("Weld")
+				Weld.Part0 = FakeRArm
+				Weld.Part1 = Grenade0
+				Weld.C0 = Grip.C0
+				Weld.C1 = CF(0, 0, -0.5) * CFANG(RAD(90), RAD(90), 0)
+				Weld.Parent = Grenade0
+				
+				TweenJoint(LWeld2, CF(), CF(), Sine, 0.3)
+				TweenJoint(RWeld2, CF(), CF(), Sine, 0.3)
+				TweenJoint(LWeld, ArmC0[1], CF(0, 0.5, 0.1) * CFANG(RAD(90), 0, 0), Sine, 0.3)
+				TweenJoint(RWeld, ArmC0[2], CF(0, 0.4, 0.1) * CFANG(RAD(-80), 0, 0), Sine, 0.3)
+				wait(0.3)
+			else
+				Grenade0 = CreateGrenade()
+				Grenade0.Parent = Gun_Ignore
+				
+				local Weld = Instance.new("Weld")
+				Weld.Part0 = FakeRArm
+				Weld.Part1 = Grenade0:WaitForChild("Center")
+				Weld.C0 = Grip.C0
+				Weld.Parent = Grenade0:WaitForChild("Center")
+				
+				TweenJoint(LWeld2, CF(), CFANG(0, RAD(80), 0), Linear, 0.25)
+				TweenJoint(RWeld2, CF(), CFANG(0, RAD(-80), 0), Linear, 0.25)
+				TweenJoint(LWeld, ArmC0[1], CF(-0.2, 0.8, 0.1) * CFANG(RAD(10), 0, RAD(-30)), Linear, 0.25)
+				TweenJoint(RWeld, ArmC0[2], CF(0.2, 0.8, 0.1) * CFANG(RAD(10), 0, RAD(30)), Linear, 0.25)
+				wait(0.3)
+			end
+		end;
+	
+		function()
+			repeat wait() until (not Keys[S.LethalGrenadeKey]) and (not Keys[S.TacticalGrenadeKey]) or (not Selected)
+		end;
+	
+		function()
+			if S.LethalGrenadeType ~= 3 or Type == 2 then
+				TweenJoint(LWeld2, CF(), CFANG(0, RAD(45), 0), Sine, 0.2)
+				TweenJoint(RWeld2, CF(), CFANG(0, RAD(-45), 0), Sine, 0.2)
+				TweenJoint(LWeld, ArmC0[1], CF(0, 0.8, 0.1), Sine, 0.2)
+				TweenJoint(RWeld, ArmC0[2], CF(0, 0.8, 0.1), Sine, 0.2)
+				wait(0.2)
+			end
+		end;
+	
+		function()
+			if S.LethalGrenadeType ~= 3 or Type == 2 then
+				TweenJoint(LWeld2, CF(), CF(), Sine, 0.3)
+				TweenJoint(RWeld2, CF(), CF(), Sine, 0.3)
+				TweenJoint(LWeld, ArmC0[1], CF(0, 0.5, 0.1) * CFANG(RAD(90), 0, 0), Sine, 0.3)
+				TweenJoint(RWeld, ArmC0[2], CF(0, 0.4, 0.1) * CFANG(RAD(-80), 0, 0), Sine, 0.3)
+				wait(0.3)
+			end
+		end;
+	
+		function()
+			TweenJoint(RWeld, ArmC0[2], CF(0, 0.8, 0.1) * CFANG(RAD(-10), 0, 0), Sine, 0.1)
+			wait(0.07)
+		end;
+	
+		function()
+			local Main = nil
+			Grenade0:Destroy()
+			
+			if S.LethalGrenadeType == 3 and Type == 1 then
+				local Grenade1 = CreateKnife()
+				Main = Grenade1
+				
+				Grenade1.Parent = Gun_Ignore
+				
+				Main.CFrame = FakeRArm.CFrame * Grip.C0 * CF(0, 0.5, 0) * CFANG(RAD(-90), 0, RAD(90))
+				Main.Velocity = Main.Velocity + ((Head.CFrame * CFANG(RAD(7), 0, 0)).lookVector * S.LethalGrenadeThrowVelocity)
+				Main.RotVelocity = (Main.CFrame * CFANG(RAD(90), 0, 0)).lookVector * 20
+			else
+				local Grenade1 = CreateGrenade()
+				Main = Grenade1:WaitForChild("Center")
+				
+				local Sound = Instance.new("Sound")
+				Sound.SoundId = (Type == 1 and "rbxassetid://180302005" or "rbxassetid://156283116")
+				Sound.Volume = 1
+				Sound.PlayOnRemove = true
+				Sound.Parent = Main
+				
+				Grenade1.Parent = Gun_Ignore
+				
+				Main.CanCollide = true
+				Main.CFrame = FakeRArm.CFrame * Grip.C0
+				if Type == 1 then
+					Main.Velocity = Main.Velocity + ((Head.CFrame * CFANG(RAD(7), 0, 0)).lookVector * S.LethalGrenadeThrowVelocity)
+				elseif Type == 2 then
+					Main.Velocity = Main.Velocity + ((Head.CFrame * CFANG(RAD(7), 0, 0)).lookVector * S.TacticalGrenadeThrowVelocity)
+				end
+			end
+			
+			spawn(function()
+				if Type == 1 then
+					if S.LethalGrenadeType == 1 then
+						if S.TimerStartOnHit then
+							local Detonated = false
+							Main.Touched:connect(function(Obj)
+								if IsIgnored(Obj) or Detonated then return end
+								Main.Velocity = Main.Velocity / 4
+								Detonated = true
+								
+								wait(S.DetonationTime)
+								
+								DetonateExplosive(Main)
+							end)
+						else
+							spawn(function()
+								local Touched = false
+								Main.Touched:connect(function(Obj)
+									if IsIgnored(Obj) or Touched then return end
+									Touched = true
+									Main.Velocity = Main.Velocity / 4
+								end)
+							end)
+							wait(S.DetonationTime)
+							DetonateExplosive(Main)
+						end
+					elseif S.LethalGrenadeType == 2 then
+						local Detonated = false
+						local GrenadeCF = nil
+						Main.Touched:connect(function(Obj)
+							if IsIgnored(Obj) or Detonated then return end
+							GrenadeCF = Main.CFrame
+							
+							local W = Instance.new("Weld")
+							W.Name = "Semtex"
+							W.Part0 = Main
+							W.Part1 = Obj
+							W.C0 = GrenadeCF:toObjectSpace(Obj.CFrame)
+							W.Parent = Main
+							
+							Main.ChildRemoved:connect(function(C)
+								if C.Name == "Semtex" then
+									local W = Instance.new("Weld")
+									W.Name = "Semtex"
+									W.Part0 = Main
+									W.Part1 = Obj
+									W.C0 = GrenadeCF:toObjectSpace(Obj.CFrame)
+									W.Parent = Main
+								end
+							end)
+							
+							if S.TimerStartOnHit then
+								Detonated = true
+								wait(S.DetonationTime)
+								DetonateExplosive(Main)
+							end
+						end)
+						
+						if (not S.TimerStartOnHit) then
+							wait(S.DetonationTime)
+							Detonated = true
+							DetonateExplosive(Main)
+						end
+					elseif S.LethalGrenadeType == 3 then
+						local Touched = false
+						Main.Touched:connect(function(Obj)
+							if IsIgnored(Obj) or Touched then return end
+							Touched = true
+							
+							local W = Instance.new("Weld")
+							W.Name = "Sticky"
+							W.Part0 = Main
+							W.Part1 = Obj
+							W.C0 = Main.CFrame:toObjectSpace(Obj.CFrame)
+							W.Parent = Main
+							
+							Main.ChildRemoved:connect(function(C)
+								if C.Name == "Sticky" then
+									local W = Instance.new("Weld")
+									W.Name = "Sticky"
+									W.Part0 = Main
+									W.Part1 = Obj
+									W.C0 = Main.CFrame:toObjectSpace(Obj.CFrame)
+									W.Parent = Main
+								end
+							end)
+							
+							if Obj then
+								if Obj.Parent.ClassName == "Hat" then
+									local HitHumanoid = FindFirstClass(Obj.Parent.Parent, "Humanoid")
+									if HitHumanoid and IsEnemy(HitHumanoid) then
+										local CreatorTag = Instance.new("ObjectValue")
+										CreatorTag.Name = "creator"
+										CreatorTag.Value = Player
+										CreatorTag.Parent = HitHumanoid
+										HitHumanoid:TakeDamage(HitHumanoid.MaxHealth)
+										MarkHit()
+									end
+								else
+									local HitHumanoid = FindFirstClass(Obj.Parent, "Humanoid")
+									if HitHumanoid and IsEnemy(HitHumanoid) then
+										local CreatorTag = Instance.new("ObjectValue")
+										CreatorTag.Name = "creator"
+										CreatorTag.Value = Player
+										CreatorTag.Parent = HitHumanoid
+										HitHumanoid:TakeDamage(HitHumanoid.MaxHealth)
+										MarkHit()
+									end
+								end
+							end
+							
+							wait(3)
+							
+							Main:Destroy()
+						end)
+					end
+				elseif Type == 2 then
+					if S.TacticalGrenadeType == 1 then
+						if S.TimerStartOnHit then
+							local Detonated = false
+							Main.Touched:connect(function(Obj)
+								if IsIgnored(Obj) or Detonated then return end
+								Main.Velocity = Main.Velocity / 2
+								Detonated = true
+								
+								wait(S.DetonationTime)
+								
+								DetonateSmoke(Main)
+							end)
+						else
+							spawn(function()
+								local Touched = false
+								Main.Touched:connect(function(Obj)
+									if IsIgnored(Obj) or Touched then return end
+									Touched = true
+									Main.Velocity = Main.Velocity / 2
+								end)
+							end)
+							wait(S.DetonationTime)
+							DetonateSmoke(Main)
+						end
+					end
+				end
+			end)
+			
+			if S.GrenadeTrail and S.GrenadeTrailTransparency ~= 1 then
+				spawn(function()
+					local LastPos = nil
+					while true do
+						if LastPos then
+							if (not Main:IsDescendantOf(game))
+							or (Main.Name == "Knife" and FindFirstClass(Main, "Weld")) then
+								break
+							end
+							local Trail = Instance.new("Part")
+							Trail.BrickColor = S.GrenadeTrailColor
+							Trail.Transparency = S.GrenadeTrailTransparency
+							Trail.Anchored = true
+							Trail.CanCollide = false
+							Trail.Size = VEC3(1, 1, 1)
+							local Mesh = Instance.new("BlockMesh")
+							Mesh.Offset = VEC3(0, 0, -(Main.Position - LastPos).magnitude / 2)
+							Mesh.Scale = VEC3(S.GrenadeTrailThickness, S.GrenadeTrailThickness, (Main.Position - LastPos).magnitude)
+							Mesh.Parent = Trail
+							Trail.Parent = Gun_Ignore
+							Trail.CFrame = CF(LastPos, Main.Position)
+							delay(S.GrenadeTrailVisibleTime, function()
+								if S.GrenadeTrailDisappearTime > 0 then
+									local X = 0
+									while true do
+										if X == 90 then break end
+										if (not Selected) then break end
+										local NewX = X + (1.5 / S.GrenadeTrailDisappearTime)
+										X = (NewX > 90 and 90 or NewX)
+										local Alpha = X / 90
+										Trail.Transparency = NumLerp(S.GrenadeTrailTransparency, 1, Alpha)
+										RS:wait()
+									end
+									Trail:Destroy()
+								else
+									Trail:Destroy()
+								end
+							end)
+							LastPos = Main.Position
+						else
+							LastPos = Main.Position
+						end
+						RS:wait()
+					end
+				end)
+			end
+			wait(0.2)
+		end;
+	
+		function()
+			TweenJoint(RWeld, CF(1.5, 0, 0) * CFANG(0, 0, RAD(-10)), CF(0, 0.6, 0), Linear, 0.2)
+			wait(0.3)
+		end;
+	
+		function()
+			Grip.Part0 = RArm
+			Grip.C1 = CFANG(0, RAD(20), 0)
+			
+			TweenJoint(LWeld, ArmC0[1], S.ArmC1_UnAimed.Left, Linear, 0.2)
+			TweenJoint(RWeld, ArmC0[2], S.ArmC1_UnAimed.Right, Linear, 0.2)
+			wait(0.2)
+		end;
+	}
+	
+	for _,F in pairs(AnimTable) do
+		if (not Selected) then
+			break
+		end
+		F()
+	end
+	
+	if (not Selected) and Grenade0 then
+		Grenade0:Destroy()
+	end
+end
+
+function SteadyCamera()
+	Gui_Clone.Scope.Steady.Text = "Steadying..."
+	Gui_Clone.Scope.Steady.TextColor3 = Color3.new(1, 1, 0)
+	CameraSteady = true
+	local OriginalSway = CameraSway
+	for X = 0, 90, 1.5 / 0.6 do
+		if (not Run_Key_Pressed) then break end
+		local Alpha = SIN(RAD(X))
+		CameraSway = NumLerp(OriginalSway, 0, Alpha)
+		RS:wait()
+	end
+	while Run_Key_Pressed and Aimed do
+		if CurrentSteadyTime > 0 then
+			local NewSteadyTime = CurrentSteadyTime - 1
+			CurrentSteadyTime = (NewSteadyTime < 0 and 0 or NewSteadyTime)
+			CameraSway = 0
+		elseif CurrentSteadyTime == 0 then
+			break
+		end
+		RS:wait()
+	end
+	CameraSteady = false
+	spawn(function()
+		for X = 0, 90, 1.5 / 0.2 do
+			local Alpha = math.log10(X) / math.log10(90)
+			CameraSway = NumLerp(0, 3, Alpha)
+			RS:wait()
+		end
+		for X = 0, 90, 1.5 / S.ScopeSteadyTime do
+			if CameraSteady then break end
+			local Alpha = SIN(RAD(X))
+			CameraSway = NumLerp(3, 1, Alpha)
+			RS:wait()
+		end
+	end)
+	RetakeBreath()
+end
+
+function RetakeBreath()
+	local Steady = Gui_Clone.Scope.Steady
+	Steady.Text = "Re-taking Breath"
+	Steady.TextColor3 = Color3.new(1, 0, 0)
+	TakingBreath = true
+	while TakingBreath do
+		if CurrentSteadyTime < MaxSteadyTime then
+			local NewSteadyTime = CurrentSteadyTime + (S.ScopeSteadyTime / S.SteadyCooldownTime)
+			CurrentSteadyTime = (NewSteadyTime > MaxSteadyTime and MaxSteadyTime or NewSteadyTime)
+		elseif CurrentSteadyTime >= MaxSteadyTime then
+			break
+		end
+		RS:wait()
+	end
+	if TakingBreath then
+		Steady.Text = "Hold "..ConvertKey(S.ScopeSteadyKey).." to Steady"
+		Steady.TextColor3 = Color3.new(1, 1, 0)
+		TakingBreath = false
+	end
+end
+
+function MonitorStamina()
+	while Run_Key_Pressed do
+		if (not Aimed) and (not Aiming) then 
+			break
+		end
+		RS:wait()
+	end
+	while Run_Key_Pressed and (not Aiming) and (not Aimed) and (not Knifing) and (not ThrowingGrenade) do
+		local Forward = (Keys["w"] or Keys[string.char(17)])
+		local Backward = (Keys["s"] or Keys[string.char(18)])
+		if (Forward and (not Backward))
+		and Walking and (Stamina > 0) then
+			if Stance == 1 or Stance == 2 then Stand() end
+			local NewStamina = Stamina - 1
+			Stamina = (NewStamina < 0 and 0 or NewStamina)
+			Running = true
+		elseif (not (Forward and (not Backward)))
+		or (not Walking) or (Stamina == 0) then
+			break
+		end
+		RS:wait()
+	end
+	Running = false
+	RechargeStamina()
+end
+
+function RechargeStamina()
+	ChargingStamina = true
+	while ((not Run_Key_Pressed) or (Stamina < MaxStamina)) and (not Running) do
+		if Stamina < MaxStamina then
+			local NewStamina = Stamina + (S.SprintTime / S.StaminaCoolTime)
+			Stamina = (NewStamina > MaxStamina and MaxStamina or NewStamina)
+		elseif Stamina >= MaxStamina then
+			break
+		end
+		RS:wait()
+	end
+	ChargingStamina = false
+end
+
+function Stand(OnDeselected)
+	local LHip = Torso["Left Hip"]
+	local RHip = Torso["Right Hip"]
+	local Root = HRP.RootJoint
+	Stance = 0
+	if S.StanceAnimation and (not OnDeselected) then
+		spawn(function()
+			local PreviousOffset = Humanoid.CameraOffset
+			local PreviousRootP = Root.C0.p
+			for X = 0, 90, 1.5 / S.StanceChangeSpeed do
+				if Stance ~= 0 then break end
+				local Alpha = Sine(X)
+				Humanoid.CameraOffset = PreviousOffset:lerp(StanceOffset[1], Alpha)
+				Root.C0 = CF(PreviousRootP:lerp(VEC3(), Alpha)) * CFANG(RAD(-90), 0, RAD(180))
+				RS:wait()
+			end
+		end)
+		TweenJoint(ABWeld, CF(), CF(), Sine, S.StanceChangeSpeed)
+		TweenJoint(LHip, CF(-1, -1, 0) * CFANG(0, RAD(-90), 0), CF(-0.5, 1, 0) * CFANG(0, RAD(-90), 0), Sine, S.StanceChangeSpeed)
+		TweenJoint(RHip, CF(1, -1, 0) * CFANG(RAD(-180), RAD(90), 0), CF(0.5, 1, 0) * CFANG(RAD(-180), RAD(90), 0), Sine, S.StanceChangeSpeed)
+	elseif OnDeselected then
+		Humanoid.CameraOffset = StanceOffset[1]
+		ABWeld.C0 = CF()
+		ABWeld.C1 = CF()
+		LHip.C0 = CF(-1, -1, 0) * CFANG(0, RAD(-90), 0)
+		LHip.C1 = CF(-0.5, 1, 0) * CFANG(0, RAD(-90), 0)
+		RHip.C0 = CF(1, -1, 0) * CFANG(RAD(-180), RAD(90), 0)
+		RHip.C1 = CF(0.5, 1, 0) * CFANG(RAD(-180), RAD(90), 0)
+		Root.C0 = CFANG(RAD(-90), 0, RAD(180))
+	end
+end
+
+function Crouch()
+	local LHip = Torso["Left Hip"]
+	local RHip = Torso["Right Hip"]
+	local Root = HRP.RootJoint
+	Stance = 1
+	if S.StanceAnimation then
+		spawn(function()
+			local PreviousOffset = Humanoid.CameraOffset
+			local PreviousRootP = Root.C0.p
+			for X = 0, 90, 1.5 / S.StanceChangeSpeed do
+				if Stance ~= 1 then break end
+				local Alpha = Sine(X)
+				Humanoid.CameraOffset = PreviousOffset:lerp(StanceOffset[2], Alpha)
+				Root.C0 = CF(PreviousRootP:lerp(VEC3(0, -1, 0), Alpha)) * CFANG(RAD(-90), 0, RAD(180))
+				RS:wait()
+			end
+		end)
+		TweenJoint(ABWeld, CF(0, 0, -1 / 16), CF(), Sine, S.StanceChangeSpeed)
+		TweenJoint(LHip, CF(-1, -0.5, 0) * CFANG(0, RAD(-90), 0), CF(-0.5, 0.5, 1) * CFANG(0, RAD(-90), RAD(-90)), Sine, S.StanceChangeSpeed)
+		TweenJoint(RHip, CF(1, -0.5, 0.25) * CFANG(RAD(-180), RAD(90), 0), CF(0.5, 0.5, 1) * CFANG(RAD(-180), RAD(90), 0), Sine, S.StanceChangeSpeed)
+	else
+		Humanoid.CameraOffset = StanceOffset[2]
+		ABWeld.C0 = CF(0, 0, -1 / 16)
+		ABWeld.C1 = CF()
+		LHip.C0 = CF(-1, -0.5, 0) * CFANG(0, RAD(-90), 0)
+		LHip.C1 = CF(-0.5, 0.5, 1) * CFANG(0, RAD(-90), RAD(-90))
+		RHip.C0 = CF(1, -0.5, 0.25) * CFANG(RAD(-180), RAD(90), 0)
+		RHip.C1 = CF(0.5, 0.5, 1) * CFANG(RAD(-180), RAD(90), 0)
+		Root.C0 = CF(0, -1, 0) * CFANG(RAD(-90), 0, RAD(180))
+	end
+end
+
+function Prone()
+	local LHip = Torso["Left Hip"]
+	local RHip = Torso["Right Hip"]
+	local Root = HRP.RootJoint
+	Stance = 2
+	if S.StanceAnimation then
+		spawn(function()
+			local PreviousOffset = Humanoid.CameraOffset
+			local PreviousRootP = Root.C0.p
+			for X = 0, 90, 1.5 / S.StanceChangeSpeed do
+				if Stance ~= 2 then break end
+				local Alpha = Sine(X)
+				Humanoid.CameraOffset = PreviousOffset:lerp(StanceOffset[3], Alpha)
+				Root.C0 = CF(PreviousRootP:lerp(VEC3(0, -2.5, 1), Alpha)) * CFANG(RAD(180), 0, RAD(180))
+				RS:wait()
+			end
+		end)
+		TweenJoint(ABWeld, CF(0, 0, -1 / 8), CF(), Sine, S.StanceChangeSpeed)
+		TweenJoint(LHip, CF(-1, -1, 0) * CFANG(0, RAD(-90), 0), CF(-0.5, 1, 0) * CFANG(0, RAD(-90), 0), Sine, S.StanceChangeSpeed)
+		TweenJoint(RHip, CF(1, -1, 0) * CFANG(RAD(-180), RAD(90), 0), CF(0.5, 1, 0) * CFANG(RAD(-180), RAD(90), 0), Sine, S.StanceChangeSpeed)
+	else
+		Humanoid.CameraOffset = StanceOffset[3]
+		ABWeld.C0 = CF(0, 0, -1 / 8)
+		ABWeld.C1 = CF()
+		LHip.C0 = CF(-1, -1, 0) * CFANG(0, RAD(-90), 0)
+		LHip.C1 = CF(-0.5, 1, 0) * CFANG(0, RAD(-90), 0)
+		RHip.C0 = CF(1, -1, 0) * CFANG(RAD(-180), RAD(90), 0)
+		RHip.C1 = CF(0.5, 1, 0) * CFANG(RAD(-180), RAD(90), 0)
+		Root.C0 = CF(0, -2.5, 1) * CFANG(RAD(180), 0, RAD(180))
+	end
+end
+
+function Dive(Speed)
+	local DiveVelocity = (HRP.CFrame * CFANG(RAD(18),0,0)).lookVector * Speed * (35 / 16) * 4e3
+	HRP.Velocity = VEC3()
+	Torso.Velocity = VEC3()
+	local BF = Instance.new("BodyForce")
+	BF.force = DiveVelocity
+	BF.Parent = HRP
+	delay(0.05, function()
+		Prone()
+		local Start = tick()
+		while true do
+			wait()
+			if (tick() - Start) > 0.1 then break end
+			BF.force = -HRP.Velocity * 700
+		end
+		BF:Destroy()
+	end)
+end
+
+function KeyDown(K)
+	local Key = string.lower(K)
+	
+	if Key == S.LowerStanceKey and S.CanChangeStance then
+		if (not Running) then
+			if Stance == 0 then
+				Crouch()
+			elseif Stance == 1 then
+				Prone()
+			end
+		elseif S.DolphinDive then
+			delay(1 / 30,function()
+				CanRun = false
+				Dive(S.BaseWalkSpeed)
+				Run_Key_Pressed = false
+				wait(S.DiveRechargeTime)
+				CanRun = true
+			end)
+		end
+	end
+	
+	if Key == S.RaiseStanceKey and S.CanChangeStance then
+		if (not Running) then
+			if Stance == 2 then
+				Crouch()
+			elseif Stance == 1 then
+				Stand()
+			end
+		end
+	end
+	
+	if Key == S.ADSKey then
+		if S.HoldMouseOrKeyToADS then
+			if (not AimingIn) and (not Aimed) then
+				AimingIn = true
+				AimGun()
+				AimingIn = false
+			end
+		else
+			if Aimed then
+				UnAimGun()
+			else
+				AimGun()
+			end
+		end
+	end
+	
+	if Key == S.ReloadKey then
+		if (not Reloading) and (not Running) then
+			Reload()
+		end
+	end
+	
+	
+	if Key == S.KnifeKey and S.CanKnife then
+		if KnifeReady and (not Knifing) and (not ThrowingGrenade) then
+			if Aimed then UnAimGun(true) end
+			BreakReload = true
+			Knifing = true
+			KnifeReady = false
+			KnifeAnim()
+			BreakReload = false
+			Knifing = false
+			delay(S.KnifeCooldown, function()
+				KnifeReady = true
+			end)
+		end
+	end
+	
+	if Key == S.LethalGrenadeKey and S.Throwables then
+		if (not Knifing) and (not Running) and (not Aimed) and (not Aiming) and (not ThrowingGrenade) then
+			if LethalGrenades.Value > 0 then
+				LethalGrenades.Value = LethalGrenades.Value - 1
+				ThrowingGrenade = true
+				ThrowGrenade(1)
+				ThrowingGrenade = false
+			end
+		end
+	end
+	
+	if Key == S.TacticalGrenadeKey and S.Throwables then
+		if (not Knifing) and (not Running) and (not Aimed) and (not Aiming) and (not ThrowingGrenade) then
+			if TacticalGrenades.Value > 0 then
+				TacticalGrenades.Value = TacticalGrenades.Value - 1
+				ThrowingGrenade = true
+				ThrowGrenade(2)
+				ThrowingGrenade = false
+			end
+		end
+	end
+	
+	if Key == S.SprintKey then
+		Run_Key_Pressed = true
+		if Aimed and (not Aiming) then
+			TakingBreath = false
+			SteadyCamera()
+		end
+		if CanRun then
+			if (not Idleing) and Walking and (not Running) and (not Knifing) and (not ThrowingGrenade) then
+				if Reloading then BreakReload = true end
+				MonitorStamina()
+			end
+		end
+	end
+end
+
+function KeyUp(K)
+	local Key = string.lower(K)
+	
+	if Key == S.ADSKey then
+		if S.HoldMouseOrKeyToADS then
+			if (not AimingOut) and Aimed then
+				AimingOut = true
+				UnAimGun()
+				AimingOut = false
+			end
+		end
+	end
+	
+	if Key == S.SprintKey then
+		Run_Key_Pressed = false
+		Running = false
+		if (not ChargingStamina) then
+			RechargeStamina()
+		end
+	end
+end
+
+function OnEquipped(M_Icon)
+	wait(math.random(10, 40) / 100)
+	if Humanoid.Health ~= 0 and (not Selected) and Gun.Parent == Character then
+		Selected = true
+		
+		BreakReload = false
+		
+		for _, GM in pairs(Ignore_Model:GetChildren()) do
+			if GM.Name == "Gun_Ignore_"..Player.Name then
+				GM:Destroy()
+			end
+		end
+		
+		for _,c in pairs(Connections) do
+			c:disconnect()
+		end
+		
+		Connections = {}
+		
+		Gun_Ignore = Instance.new("Model")
+		Gun_Ignore.Name = "Gun_Ignore_"..Player.Name
+		Gun_Ignore.Parent = Ignore_Model
+		
+		M_Icon.Icon = "rbxasset://textures\\Blank.png"
+		
+		Gui_Clone = Main_Gui:Clone()
+		Gui_Clone.Parent = Player.PlayerGui
+		
+		SetUpGui()
+		
+		Shoulders.Right.Part1 = nil
+		Shoulders.Left.Part1 = nil
+		
+		PrevNeckCF.C0 = Neck.C0
+		PrevNeckCF.C1 = Neck.C1
+		
+		BG = Instance.new("BodyGyro", HRP)
+		BG.maxTorque = VEC3(HUGE, HUGE, HUGE)
+		BG.Name = "BG"
+		BG.P = 1e5
+		BG.cframe = CF(Torso.CFrame.p, Torso.CFrame.p + Torso.CFrame.lookVector)
+
+		local PlayerFolder = Instance.new("Model")
+		PlayerFolder.Name = "PlayerFolder"
+		PlayerFolder.Parent = Gun_Ignore
+		
+		local AnimBase = Instance.new("Part")
+		AnimBase.Transparency = 1
+		AnimBase.Name = "AnimBase"
+		AnimBase.CanCollide = false
+		AnimBase.FormFactor = Enum.FormFactor.Custom
+		AnimBase.Size = VEC3(0.2, 0.2, 0.2)
+		AnimBase.BottomSurface = Enum.SurfaceType.Smooth
+		AnimBase.TopSurface = Enum.SurfaceType.Smooth
+		AnimBase.Parent = PlayerFolder
+		
+		AnimWeld = Instance.new("Weld")
+		AnimWeld.Part0 = AnimBase
+		AnimWeld.Part1 = Head
+		AnimWeld.C0 = CF(0, 1, 0)
+		AnimWeld.Parent = AnimBase
+		
+		local ArmBase = Instance.new("Part")
+		ArmBase.Transparency = 1
+		ArmBase.Name = "ArmBase"
+		ArmBase.CanCollide = false
+		ArmBase.FormFactor = Enum.FormFactor.Custom
+		ArmBase.Size = VEC3(0.2, 0.2, 0.2)
+		ArmBase.BottomSurface = Enum.SurfaceType.Smooth
+		ArmBase.TopSurface = Enum.SurfaceType.Smooth
+		ArmBase.Parent = PlayerFolder
+		
+		ABWeld = Instance.new("Weld")
+		ABWeld.Part0 = ArmBase
+		ABWeld.Part1 = AnimBase
+		ABWeld.Parent = ArmBase
+		
+		local LArmBase = Instance.new("Part")
+		LArmBase.Transparency = 1
+		LArmBase.Name = "LArmBase"
+		LArmBase.CanCollide = false
+		LArmBase.FormFactor = Enum.FormFactor.Custom
+		LArmBase.Size = VEC3(0.2, 0.2, 0.2)
+		LArmBase.BottomSurface = Enum.SurfaceType.Smooth
+		LArmBase.TopSurface = Enum.SurfaceType.Smooth
+		LArmBase.Parent = PlayerFolder
+		
+		local RArmBase = Instance.new("Part")
+		RArmBase.Transparency = 1
+		RArmBase.Name = "RArmBase"
+		RArmBase.CanCollide = false
+		RArmBase.FormFactor = Enum.FormFactor.Custom
+		RArmBase.Size = VEC3(0.2, 0.2, 0.2)
+		RArmBase.BottomSurface = Enum.SurfaceType.Smooth
+		RArmBase.TopSurface = Enum.SurfaceType.Smooth
+		RArmBase.Parent = PlayerFolder
+		
+		LWeld = Instance.new("Weld")
+		LWeld.Name = "LWeld"
+		LWeld.Part0 = ArmBase
+		LWeld.Part1 = LArmBase
+		LWeld.C0 = ArmC0[1]
+		LWeld.C1 = S.ArmC1_UnAimed.Left
+		LWeld.Parent = ArmBase
+		
+		RWeld = Instance.new("Weld")
+		RWeld.Name = "RWeld"
+		RWeld.Part0 = ArmBase
+		RWeld.Part1 = RArmBase
+		RWeld.C0 = ArmC0[2]
+		RWeld.C1 = S.ArmC1_UnAimed.Right
+		RWeld.Parent = ArmBase
+		
+		LWeld2 = Instance.new("Weld")
+		LWeld2.Name = "LWeld"
+		LWeld2.Part0 = LArmBase
+		LWeld2.Part1 = LArm
+		LWeld2.Parent = LArmBase
+		
+		RWeld2 = Instance.new("Weld")
+		RWeld2.Name = "RWeld"
+		RWeld2.Part0 = RArmBase
+		RWeld2.Part1 = RArm
+		RWeld2.Parent = RArmBase
+		
+		if S.PlayerArms then
+			FakeLArm = LArm:Clone()
+			FakeLArm.Parent = PlayerFolder
+			FakeLArm.Transparency = S.FakeArmTransparency
+			FakeLArm:BreakJoints()
+			
+			LArm.Transparency = 1
+			
+			local FakeLWeld = Instance.new("Weld")
+			FakeLWeld.Part0 = FakeLArm
+			FakeLWeld.Part1 = LArm
+			FakeLWeld.Parent = FakeLArm
+			
+			FakeRArm = RArm:Clone()
+			FakeRArm.Parent = PlayerFolder
+			FakeRArm.Transparency = S.FakeArmTransparency
+			FakeRArm:BreakJoints()
+			
+			RArm.Transparency = 1
+			
+			local FakeRWeld = Instance.new("Weld")
+			FakeRWeld.Part0 = FakeRArm
+			FakeRWeld.Part1 = RArm
+			FakeRWeld.Parent = FakeRArm
+			
+			Instance.new("Humanoid", PlayerFolder)
+			
+			for _,Obj in pairs(Character:GetChildren()) do
+				if Obj:IsA("CharacterMesh") or Obj:IsA("Shirt") then
+					Obj:Clone().Parent = PlayerFolder
+				end
+			end
+		else
+			local ArmTable = CreateArms()
+			ArmTable[1].Model.Parent = PlayerFolder
+			ArmTable[2].Model.Parent = PlayerFolder
+			
+			FakeLArm = ArmTable[1].ArmPart
+			
+			LArm.Transparency = 1
+			
+			local FakeLWeld = Instance.new("Weld")
+			FakeLWeld.Part0 = FakeLArm
+			FakeLWeld.Part1 = LArm
+			FakeLWeld.Parent = FakeLArm
+			
+			FakeRArm = ArmTable[2].ArmPart
+			
+			RArm.Transparency = 1
+			
+			local FakeRWeld = Instance.new("Weld")
+			FakeRWeld.Part0 = FakeRArm
+			FakeRWeld.Part1 = RArm
+			FakeRWeld.Parent = FakeRArm
+		end
+		
+		for _, Tab in pairs(Parts) do
+			local Weld = Instance.new("Weld")
+			Weld.Name = "MainWeld"
+			Weld.Part0 = Handle
+			Weld.Part1 = Tab.Obj
+			Weld.C0 = Tab.Obj.WeldCF.Value
+			Weld.Parent = Handle
+			Tab.Weld = Weld
+		end
+		
+		Grip = RArm:WaitForChild("RightGrip")
+		
+		local HandleCF = ArmBase.CFrame * ArmC0[2] * S.ArmC1_Aimed.Right:inverse() * CF(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, -1, 0)
+		local HandleOffset = AimPart.CFrame:toObjectSpace(Handle.CFrame)
+		Aimed_GripCF = (Head.CFrame * HandleOffset):toObjectSpace(HandleCF)
+		
+		INSERT(Connections, Humanoid.Died:connect(function()
+			OnUnequipped(true)
+		end))
+		
+		INSERT(Connections, M2.Button1Down:connect(function()
+			MB1_Down = true
+			if S.GunType.Auto and (not S.GunType.Semi) and (not S.GunType.Burst) then
+				if (not CanFire) then return end
+				CanFire = false
+				if (not Running) and (not Knifing) and (not ThrowingGrenade) then
+					CurrentSpread = (
+						Aimed and S.Spread.Aimed or
+						((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+					)
+					while MB1_Down and (not Reloading) do
+						if Knifing and (not ThrowingGrenade) then break end
+						if Running then break end
+						if Ammo.Value > 0 then
+							Ammo.Value = Ammo.Value - 1
+							if Humanoid.Health ~= 0 then
+								if Aimed and Run_Key_Pressed and S.UnSteadyOnFire then
+									Run_Key_Pressed = false
+									CurrentSteadyTime = 0
+								end
+								Fire_Gun()
+							end
+						end
+						if Ammo.Value == 0 and S.AutoReload then
+							wait(0.2)
+							Reload()
+						end
+						wait(60 / S.FireRate)
+					end
+				end
+				CanFire = true
+			elseif (not S.GunType.Auto) and S.GunType.Burst then
+				if (not CanFire) then return end
+				CanFire = false
+				if (not Running) and (not Knifing) and (not ThrowingGrenade) then
+					CurrentSpread = (
+						Aimed and S.Spread.Aimed or
+						((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+					)
+					for i = 1, S.BurstAmount do
+						if Ammo.Value > 0 then
+							Ammo.Value = Ammo.Value - 1
+							if Humanoid.Health ~= 0 then
+								if Aimed and Run_Key_Pressed and S.UnSteadyOnFire then
+									Run_Key_Pressed = false
+									CurrentSteadyTime = 0
+								end
+								Fire_Gun()
+							end
+						end
+						if Ammo.Value == 0 and S.AutoReload then
+							wait(0.2)
+							Reload()
+							break
+						end
+						wait(S.BurstTime / S.BurstAmount)
+					end
+				end
+				wait(S.BurstWait)
+				CanFire = true
+			elseif (not S.GunType.Auto) and S.GunType.Semi then
+				if (not CanFire) then return end
+				CanFire = false
+				if (not Running) and (not Knifing) and (not ThrowingGrenade) then
+					CurrentSpread = (
+						Aimed and S.Spread.Aimed or
+						((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+					)
+					if Ammo.Value > 0 then
+						Ammo.Value = Ammo.Value - 1
+						if Humanoid.Health ~= 0 then
+							if Aimed and Run_Key_Pressed and S.UnSteadyOnFire then
+								Run_Key_Pressed = false
+								CurrentSteadyTime = 0
+							end
+							Fire_Gun()
+						end
+					end
+					if Ammo.Value == 0 and S.AutoReload then
+						wait(0.2)
+						Reload()
+					end
+					wait(60 / S.FireRate)
+				end
+				CanFire = true
+			elseif (not S.GunType.Auto) and (not S.GunType.Semi) and (not S.GunType.Burst) and S.GunType.Shot then
+				if (not CanFire) then return end
+				CanFire = false
+				if (not Running) and (not Knifing) and (not ThrowingGrenade) then
+					CurrentSpread = (
+						Aimed and S.Spread.Aimed or
+						((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+					)
+					if Ammo.Value > 0 then
+						Ammo.Value = Ammo.Value - 1
+						if Humanoid.Health ~= 0 then
+							if Aimed and Run_Key_Pressed and S.UnSteadyOnFire then
+								Run_Key_Pressed = false
+								CurrentSteadyTime = 0
+							end
+							Fire_Gun()
+						end
+					end
+					if Ammo.Value == 0 and S.AutoReload then
+						wait(0.2)
+						Reload()
+					end
+					wait(60 / S.FireRate)
+				end
+				CanFire = true
+			elseif (not S.GunType.Auto) and (not S.GunType.Semi) and S.GunType.Burst and (not S.GunType.Shot) then
+				if (not CanFire) then return end
+				CanFire = false
+				if (not Running) and (not Knifing) and (not ThrowingGrenade) then
+					CurrentSpread = (
+						Aimed and S.Spread.Aimed or
+						((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+					)
+					for i = 1, S.BurstAmount do
+						if Ammo.Value > 0 then
+							Ammo.Value = Ammo.Value - 1
+							if Humanoid.Health ~= 0 then
+								if Aimed and Run_Key_Pressed and S.UnSteadyOnFire then
+									Run_Key_Pressed = false
+									CurrentSteadyTime = 0
+								end
+								Fire_Gun()
+							end
+						end
+						if Ammo.Value == 0 and S.AutoReload then
+							wait(0.2)
+							Reload()
+							break
+						end
+						wait(S.BurstTime / S.BurstAmount)
+					end
+				end
+				wait(S.BurstWait)
+				CanFire = true
+			elseif (not S.GunType.Auto) and (not S.GunType.Burst) and (not S.GunType.Shot) and S.GunType.Explosive then
+				if (not CanFire) then return end
+				CanFire = false
+				if (not Running) and (not Knifing) and (not ThrowingGrenade) then
+					CurrentSpread = (
+						Aimed and S.Spread.Aimed or
+						((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+					)
+					if Ammo.Value > 0 then
+						Ammo.Value = Ammo.Value - 1
+						if Humanoid.Health ~= 0 then
+							if Aimed and Run_Key_Pressed and S.UnSteadyOnFire then
+								Run_Key_Pressed = false
+								CurrentSteadyTime = 0
+							end
+							Fire_Gun()
+						end
+					end
+					if Ammo.Value == 0 and S.AutoReload then
+						wait(0.2)
+						Reload()
+					end
+					wait(60 / S.FireRate)
+				end
+				CanFire = true
+			end
+		end))
+		
+		INSERT(Connections, M2.Button1Up:connect(function()
+			MB1_Down = false
+			CurrentSpread = (
+				Aimed and S.Spread.Aimed or
+				((Idleing and (not Walking)) and S.Spread.Hipfire or S.Spread.Walking)
+			)
+		end))
+		
+		INSERT(Connections, M2.Button2Down:connect(function()
+			if S.HoldMouseOrKeyToADS then
+				if (not AimingIn) and (not Aimed) then
+					AimingIn = true
+					AimGun()
+					AimingIn = false
+				end
+			else
+				if Aimed then
+					UnAimGun()
+				else
+					AimGun()
+				end
+			end
+		end))
+		
+		INSERT(Connections, M2.Button2Up:connect(function()
+			if S.HoldMouseOrKeyToADS then
+				if (not AimingOut) and Aimed then
+					AimingOut = true
+					UnAimGun()
+					AimingOut = false
+				end
+			end
+		end))
+		
+		INSERT(Connections, M2.KeyDown:connect(KeyDown))
+		
+		INSERT(Connections, M2.KeyUp:connect(KeyUp))
+		
+		INSERT(Connections, RS:connect(function()
+			local CrossHair = Gui_Clone:WaitForChild("CrossHair")
+			local HitMarker = Gui_Clone:WaitForChild("HitMarker")
+			local HUD = Gui_Clone:WaitForChild("HUD")
+			
+			CrossHair.Position = UDim2.new(0, M2.X, 0, M2.Y)
+			HitMarker.Position = UDim2.new(0, M2.X - 13, 0, M2.Y - 13)
+			
+			local Clip_Ammo_L = HUD:WaitForChild("Ammo"):WaitForChild("Clip")
+			local Stored_Ammo_L = HUD:WaitForChild("Ammo"):WaitForChild("Stored")
+			Clip_Ammo_L.Text = Ammo.Value
+			Clip_Ammo_L.TextColor3 = (Ammo.Value <= (ClipSize.Value / 3) and Color3.new(1, 0, 0) or Color3.new(1, 1, 1))
+			Stored_Ammo_L.Text = StoredAmmo.Value
+			Stored_Ammo_L.TextColor3 = (StoredAmmo.Value <= (ClipSize.Value * 2) and Color3.new(1, 0, 0) or Color3.new(1, 1, 1))
+			
+			local Lethal_Grenade_Num_L = HUD:WaitForChild("Grenades"):WaitForChild("Lethals"):WaitForChild("Num")
+			Lethal_Grenade_Num_L.Text = LethalGrenades.Value
+			Lethal_Grenade_Num_L.TextColor3 = (LethalGrenades.Value < 3 and Color3.new(1, 0, 0) or Color3.new(1, 1, 1))
+			
+			local Tactical_Grenade_Num_L = HUD:WaitForChild("Grenades"):WaitForChild("Tacticals"):WaitForChild("Num")
+			Tactical_Grenade_Num_L.Text = TacticalGrenades.Value
+			Tactical_Grenade_Num_L.TextColor3 = (TacticalGrenades.Value < 3 and Color3.new(1, 0, 0) or Color3.new(1, 1, 1))
+			
+			local Mode = HUD:WaitForChild("Mode"):WaitForChild("Main")
+			if S.GunType.Auto
+			and (not S.GunType.Semi)
+			and (not S.GunType.Burst)
+			and (not S.GunType.Explosive) then
+			
+				Mode.Text = "Auto"
+				
+			elseif (not S.GunType.Auto)
+			and S.GunType.Burst
+			and (not S.GunType.Explosive) then
+			
+				Mode.Text = "Burst"
+				
+			elseif (not S.GunType.Auto)
+			and S.GunType.Semi
+			and (not S.GunType.Explosive) then
+			
+				Mode.Text = "Semi"
+				
+			elseif (not S.GunType.Auto)
+			and (not S.GunType.Semi)
+			and (not S.GunType.Burst)
+			and S.GunType.Shot
+			and (not S.GunType.Explosive) then
+			
+				Mode.Text = "Shotgun"
+				
+			elseif (not S.GunType.Auto)
+			and (not S.GunType.Semi)
+			and S.GunType.Burst
+			and (not S.GunType.Shot)
+			and (not S.GunType.Explosive) then
+				
+				Mode.Text = "Burst"
+				
+			elseif S.GunType.Explosive then
+				
+				Mode.Text = "Explosive"
+				
+			end
+			
+			if tick() - LastBeat > (Humanoid.Health / 75) then
+				LastBeat = tick()
+				HUD.Health.Tray.Beat:TweenPosition(
+					UDim2.new(0, -21, 0, 0),
+					Enum.EasingDirection.Out,
+					Enum.EasingStyle.Linear,
+					0.7 - ((100 - Humanoid.Health) / 400),
+					false,
+					function()
+						HUD.Health.Tray.Beat.Position = UDim2.new(1, 0, 0, 0)
+					end
+				)
+			end
+			
+			HUD.Health.Num.Text = CEIL(Humanoid.Health).."%"
+			HUD.Health.Num.TextColor3 = (
+				(Humanoid.Health > 200 / 3) and Color3.new(1, 1, 1) or
+				(Humanoid.Health <= 200 / 3 and Humanoid.Health > 100 / 3) and Color3.new(1, 1, 0) or
+				(Humanoid.Health <= 100 / 3) and Color3.new(1, 0, 0)
+			)
+		end))
+		
+		INSERT(Connections, RS:connect(function()
+			local MDir = M2.UnitRay.Direction.unit
+			
+			local HRPCF = HRP.CFrame * CF(0, 1.5, 0) * CF(Humanoid.CameraOffset)
+			Neck.C0 = Torso.CFrame:toObjectSpace(HRPCF)
+			
+			if MDir.y == MDir.y then
+				HeadRot = -math.asin(MDir.y)
+				Neck.C1 = CFANG(HeadRot,0,0)
+				
+				local RotTarget = VEC3(MDir.x,0,MDir.z)
+				local Rotation = CF(Torso.Position,Torso.Position + RotTarget)
+				BG.cframe = Rotation
+				
+				local MouseX = FLOOR((M2.X - M2.ViewSizeX / 2) + 0.5)
+				local MouseY = FLOOR((M2.Y - M2.ViewSizeY / 2) + 0.5)
+				local AppliedMaxTorque = nil
+				if (Camera.CoordinateFrame.p - Head.Position).magnitude < 0.6 then
+					if (MouseX >= 50 or MouseX <= -50)
+					or (MouseY >= 50 or MouseY <= -50) then
+						AppliedMaxTorque = VEC3()
+					else
+						AppliedMaxTorque = VEC3(HUGE,HUGE,HUGE)
+					end
+				else
+					AppliedMaxTorque = VEC3(HUGE,HUGE,HUGE)
+				end
+				if (not S.RotateWhileSitting) and Humanoid.Sit then
+					AppliedMaxTorque = VEC3()
+				end
+				BG.maxTorque = AppliedMaxTorque
+			end
+		end))
+		
+		INSERT(Connections, RS:connect(function()
+			local Forward = (Keys["w"] or Keys[string.char(17)])
+			local Backward = (Keys["s"] or Keys[string.char(18)])
+			local Right = (Keys["d"] or Keys[string.char(19)])
+			local Left = (Keys["a"] or Keys[string.char(20)])
+			
+			local WalkingForward = (Forward and (not Backward))
+			local WalkingBackward = ((not Forward) and Backward)
+			local WalkingRight = (Right and (not Left))
+			local WalkingLeft = ((not Right) and Left)
+			
+			ArmTilt = (
+				((WalkingForward or WalkingBackward) and WalkingRight) and 5 or
+				((WalkingForward or WalkingBackward) and WalkingLeft) and -5 or
+				((not (WalkingForward and WalkingBackward)) and WalkingRight) and 10 or
+				((not (WalkingForward and WalkingBackward)) and WalkingLeft) and -10 or 0
+			)
+		end))
+		
+		INSERT(Connections, RS:connect(function()
+			if (not Idleing) and Walking then
+				if Running then
+					Humanoid.WalkSpeed = S.SprintSpeed
+				else
+					local SpeedRatio = (S.AimedWalkSpeed / S.BaseWalkSpeed)
+					if Stance == 0 then
+						Humanoid.WalkSpeed = (Aimed and S.AimedWalkSpeed or S.BaseWalkSpeed)
+					elseif Stance == 1 then
+						Humanoid.WalkSpeed = (Aimed and S.CrouchWalkSpeed * SpeedRatio or S.CrouchWalkSpeed)
+					elseif Stance == 2 then
+						Humanoid.WalkSpeed = (Aimed and S.ProneWalkSpeed * SpeedRatio or S.ProneWalkSpeed)
+					end
+				end
+			else
+				Humanoid.WalkSpeed = 16
+			end
+			
+			StanceSway = 1 - (0.25 * Stance)
+		end))
+		
+		Animate()
+	end
+end
+
+
+function OnUnequipped(DeleteTool)
+	if Selected then
+		Selected = false
+		
+		BreakReload = true
+		
+		Camera.FieldOfView = 70
+		
+		game:GetService("UserInputService").MouseIconEnabled = true
+		
+		Gui_Clone:Destroy()
+		BG:Destroy()
+		
+		RArm.Transparency = 0
+		LArm.Transparency = 0
+		
+		Shoulders.Right.Part1 = RArm
+		Shoulders.Left.Part1 = LArm
+		
+		Neck.C0 = PrevNeckCF.C0
+		Neck.C1 = PrevNeckCF.C1
+		
+		Humanoid.WalkSpeed = 16
+		
+		Gun_Ignore:Destroy()
+		
+		Aimed = false
+		
+		for _, Tab in pairs(Parts) do
+			Tab.Weld:Destroy()
+			Tab.Weld = nil
+		end
+		
+		for _,c in pairs(Connections) do
+			c:disconnect()
+		end
+		
+		Connections = {}
+		
+		if DeleteTool then
+			Camera:ClearAllChildren()
+			Gun:Destroy()
+		end
+		
+		if S.StandOnDeselect and Stance ~= 0 then Stand(true) end
+	end
+end
+
+Gun.Equipped:connect(OnEquipped)
+Gun.Unequipped:connect(function() OnUnequipped(false) end)
