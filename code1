@@ -1,4 +1,5 @@
--- Gun script
+Script 1
+------------
 
 local Ignore_Code = script:WaitForChild("Ignore_Code")
 
@@ -3494,3 +3495,16 @@ end
 
 Gun.Equipped:connect(OnEquipped)
 Gun.Unequipped:connect(function() OnUnequipped(false) end)
+
+
+Script 2
+------------
+local frame = script.Parent.Parent
+local debounce = false
+
+script.Parent.MouseButton1Click:Connect(function()
+if debounce == false then
+  frame.Visible = true
+else
+  frame.Visible = false
+end
